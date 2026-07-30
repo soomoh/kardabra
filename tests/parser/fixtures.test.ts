@@ -102,14 +102,17 @@ describe('legacy.xls — legacy OLE2 container', () => {
   });
 });
 
-describe('savings_reject.csv — bank-account layout', () => {
-  it('rejects a withdrawal/deposit statement as not a credit card', () => {
-    try {
-      parse('savings_reject.csv');
-      expect.unreachable('a savings statement must be rejected');
-    } catch (error) {
-      expect(error).toBeInstanceOf(StatementError);
-      expect((error as StatementError).kind).toBe('savings-statement');
-    }
-  });
+describe('bank-account layouts are rejected, not parsed as a card', () => {
+  it.each(['savings_reject.csv', 'savings_debit_credit.csv'])(
+    'rejects %s (separate money-out / money-in columns)',
+    (name) => {
+      try {
+        parse(name);
+        expect.unreachable('a bank-account statement must be rejected');
+      } catch (error) {
+        expect(error).toBeInstanceOf(StatementError);
+        expect((error as StatementError).kind).toBe('savings-statement');
+      }
+    },
+  );
 });

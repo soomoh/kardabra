@@ -68,10 +68,15 @@ export function resolveTable(row: unknown[]): Table | 'savings' | null {
   ]);
   if (dateCol === null || descCol === null) return null;
 
-  // Layout 1 — separate money-in / money-out columns (savings statements).
-  const outCol = findColumn(header, ['withdrawal'], ['dr']);
-  const inCol = findColumn(header, ['deposit'], ['cr']);
-  if (outCol !== null && inCol !== null) {
+  // Layout 1 — a bank account statement: separate money-out and money-in
+  // columns (withdrawal/deposit, or debit-amount/credit-amount) instead of one
+  // signed amount column. Detected by two DISTINCT columns, one per direction.
+  // A card's single "Debit/Credit" marker column contains both words and so
+  // resolves to the same column — requiring outCol !== inCol keeps that card
+  // layout out of here.
+  const outCol = findColumn(header, ['withdrawal', 'debit'], ['dr']);
+  const inCol = findColumn(header, ['deposit', 'credit'], ['cr']);
+  if (outCol !== null && inCol !== null && outCol !== inCol) {
     return 'savings';
   }
 

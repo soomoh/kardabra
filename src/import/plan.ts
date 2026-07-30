@@ -255,9 +255,12 @@ function planOneFile(
     cardRef.kind === 'existing'
       ? existingCards.find((card) => card.id === cardRef.cardId)
       : undefined;
+  // Ask for the due day whenever the card doesn't already have a stored one —
+  // for every new card, and for an existing card that was never given one.
+  // Parsed statement due dates aren't relied on for this yet, so the import
+  // experience is consistent: the user always sets the due day for a new card.
   const needsDueDay =
-    parsed.summary.paymentDueDateISO === undefined &&
-    (cardRef.kind === 'new' || existingCard?.dueDay === undefined);
+    cardRef.kind === 'new' || existingCard?.dueDay === undefined;
 
   return { kind: 'new-statement', parsed, period, cardRef, needsDueDay };
 }
@@ -501,21 +504,18 @@ function buildCycleRecord(
   parsed: ParsedStatement,
   dueDay: number | undefined,
 ): CycleRecord {
-  // The statement's own due date wins when present — it's the bank's
-  // authoritative answer. Otherwise, project one from the card's
-  // ask-once `dueDay` relative to this statement's own dateline (with a
-  // minimum grace gap — see nextDueDateWithGraceISO's comment for the
-  // real mis-projection this prevents); with neither available the due
-  // date stays the null sentinel (unknown), rather than the commit
-  // failing outright.
+  // The user-set `dueDay` wins: project the due date from it relative to this
+  // statement's dateline (with a minimum grace gap — see nextDueDateWithGraceISO
+  // for the mis-projection it prevents). Only when no due day is known does the
+  // statement's own parsed due date stand in; with neither, the due date stays
+  // the null sentinel (unknown) rather than failing the commit.
   const anchorDateISO =
     parsed.summary.statementDateISO ??
     maxTransactionDateISO(parsed.transactions);
   const dueDateISO =
-    parsed.summary.paymentDueDateISO ??
-    (dueDay !== undefined && anchorDateISO !== null
+    dueDay !== undefined && anchorDateISO !== null
       ? nextDueDateWithGraceISO(anchorDateISO, dueDay)
-      : null);
+      : (parsed.summary.paymentDueDateISO ?? null);
 
   // Spend = debits minus cashback/refund-style credits, with the
   // identified bill-payment SET excluded (see lib/spend.ts for the

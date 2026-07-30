@@ -251,29 +251,32 @@ function TrendsChart({ trends }: TrendsChartProps) {
                   SEGMENT_GAP,
                 );
 
-                // Stack bottom-up: series[0] sits on the baseline, later
-                // series stack above it with a SEGMENT_GAP between
-                // adjacent nonzero segments. The topmost nonzero segment
-                // gets the rounded top corner.
-                const topIndex = (() => {
-                  for (let i = visibleSeries.length - 1; i >= 0; i--) {
-                    if (segmentHeights[i] > 0) return i;
-                  }
-                  return -1;
-                })();
+                // Stack largest-first from the baseline: big spends sit at
+                // the bottom and small ones at the top, in the same size order
+                // every month regardless of card. Colour still identifies the
+                // card (see colorVarFor), so reordering the stack never changes
+                // which card a segment belongs to. Zero-value series drop out
+                // entirely — no mark, no gap.
+                const stacked = visibleSeries
+                  .map((series, seriesIndex) => ({
+                    series,
+                    value: series.values[periodIndex],
+                    height: segmentHeights[seriesIndex],
+                  }))
+                  .filter((entry) => entry.height > 0)
+                  .sort((a, b) => b.value - a.value);
 
                 let stackCursor = chartBottom; // y of the next segment's bottom edge
-                const segments = visibleSeries.map((series, seriesIndex) => {
-                  const value = series.values[periodIndex];
-                  const height = segmentHeights[seriesIndex];
-                  if (height <= 0) return null; // zero value: no mark, no gap
-
+                const segments = stacked.map((entry, stackIndex) => {
+                  const { series, value, height } = entry;
                   const top = stackCursor - height;
                   stackCursor = top - SEGMENT_GAP;
 
                   const originalIndex = trends.series.indexOf(series);
                   const color = colorVarFor(originalIndex, series);
-                  const isTop = seriesIndex === topIndex;
+                  // Topmost segment (drawn last, the smallest) gets the rounded
+                  // top corner.
+                  const isTop = stackIndex === stacked.length - 1;
                   const label = `${series.nickname} · ${period} · ${formatINR(value)}`;
 
                   return (

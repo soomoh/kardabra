@@ -54,17 +54,37 @@ describe('planImport — pure planning, no writes', () => {
       last4: '4321',
       suggestedNickname: 'Card ····4321',
     });
-    // Due date came from the statement itself, so no need to ask the user.
-    expect(outcome.needsDueDay).toBe(false);
+    // A new card always asks for its due day, even though this statement
+    // carries a payment due date — parsed due dates aren't relied on yet.
+    expect(outcome.needsDueDay).toBe(true);
   });
 
-  it('flags needsDueDay only when neither statement nor card supplies one', () => {
-    const noDue = parsed({
+  it('asks for a due day on an existing card only if it has none stored', () => {
+    const carded = {
+      id: 'c1',
+      last4: '4321',
+      nickname: 'Card',
+      dueDay: 15,
+      createdAt: '2025-01-01T00:00:00.000Z',
+    };
+    const noDay = {
+      id: 'c2',
+      last4: '5555',
+      nickname: 'Other',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    };
+    const s1 = parsed({
       last4: '4321',
       summary: { statementDateISO: '2025-10-13' },
     });
-    const [out] = planImport([ok(noDue)], [], []);
-    expect(out.kind === 'new-statement' && out.needsDueDay).toBe(true);
+    const s2 = parsed({
+      last4: '5555',
+      summary: { statementDateISO: '2025-10-13' },
+    });
+    const [o1] = planImport([ok(s1)], [carded], []);
+    const [o2] = planImport([ok(s2)], [noDay], []);
+    expect(o1.kind === 'new-statement' && o1.needsDueDay).toBe(false);
+    expect(o2.kind === 'new-statement' && o2.needsDueDay).toBe(true);
   });
 
   it("prefers the statement's own date over transaction dates for the period", () => {
