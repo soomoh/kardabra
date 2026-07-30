@@ -1,0 +1,45 @@
+/** Shared data types for the statement parser. Every function under
+ * src/parser/ takes and returns plain data (strings, arrays, these types)
+ * — no Node or browser APIs — so the same code runs in tests, the app, and
+ * (unchanged) a future web worker. */
+
+/** One parsed transaction line from a statement.
+ *
+ * Sign convention: money OUT is negative (purchases, withdrawals); money
+ * IN is positive (payments, refunds, cashback, deposits). This matches how
+ * a card balance actually moves — a purchase increases what you owe, i.e.
+ * moves the balance in the negative direction — and it's the convention
+ * every downstream sum has to agree on, so it's pinned here once rather
+ * than re-decided per feature.
+ */
+export interface Transaction {
+  dateISO: string; // 'YYYY-MM-DD' — see dates.ts for why not a Date
+  payee: string;
+  amount: number; // money out negative, money in positive
+}
+
+/**
+ * Fields read from the rows *above* the transaction table — statement
+ * metadata such as due date, minimum due, and credit limit. Every field is
+ * optional and independent: "parse, don't validate" — there's no separate
+ * "is this a valid summary?" check, because a statement missing one or two
+ * fields is still a valid, partial result (see summary.ts). Amounts share
+ * Transaction's convention of representing money as a plain number, but
+ * are always positive here (a due amount, a limit — never signed).
+ */
+export interface StatementSummary {
+  statementDateISO?: string;
+  paymentDueDateISO?: string;
+  totalDue?: number;
+  minDue?: number;
+  creditLimit?: number;
+}
+
+/** The façade's return value — everything `parseStatement` recovers from
+ * one file. */
+export interface ParsedStatement {
+  fileName: string;
+  last4: string | null;
+  summary: StatementSummary;
+  transactions: Transaction[];
+}

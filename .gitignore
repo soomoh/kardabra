@@ -1,0 +1,35 @@
+# Dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Secrets & environment
+.env*
+*.local
+.dev.vars
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+*~
+*.sw[po]
+.*.sw[po]
+
+# Assistant & internal working artifacts — the public repo carries none of these
+CLAUDE.md
+.claude/
+.specs/
+
+# Local scratch that may hold real data during debugging
+inbox/
+debug/
+
+# Statements are user financial data. Make committing one impossible by accident:
+# ignore every statement-shaped file, then re-allow ONLY the synthetic test
+# fixtures (fabricated data, real layout — see tests/fixtures/README).
+*.csv
+*.xls
+*.xlsx
+!tests/fixtures/**

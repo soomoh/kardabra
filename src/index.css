@@ -1,0 +1,488 @@
+/* index.css — hand-written, no CSS framework (per the approved plan).
+ * Tone/amount colors are custom properties on :root, overridden inside a
+ * prefers-color-scheme media query — same property names, different
+ * values, so `var(--tone-overdue)` etc. themes itself automatically. */
+
+:root {
+  color-scheme: light dark;
+  font:
+    16px/1.5 system-ui,
+    sans-serif;
+  --border-color: #ddd;
+  --muted-color: #666;
+  --bg-subtle: #f6f6f6;
+  --tone-paid: #2e7d32;
+  --tone-ok: #555555;
+  --tone-soon: #b26a00;
+  --tone-overdue: #b3261e;
+  --tone-unknown: #888888;
+  --amount-debit: #b3261e;
+  --amount-credit: #2e7d32;
+  /* The page's own canvas color, matched by `color-scheme: light dark`
+   * above (the UA renders a white canvas in light, near-black in dark,
+   * with no explicit background-color set anywhere in this file — see
+   * body's rule below). TrendsChart's stacked-bar segments stroke with
+   * this exact color to punch a 2px gap between them (see .trends-*
+   * rules), so it must track whatever the real background actually is,
+   * not just approximate it. */
+  --chart-surface: #ffffff;
+  /* Categorical palette for the spend-trends chart, in fixed order —
+   * card 1 (oldest by createdAt) always gets --series-1, etc. Pre-
+   * validated against --chart-surface/--bg-subtle by the project's
+   * dataviz palette validator (light mode carries a documented, expected
+   * contrast WARN on 3 of the 8 hues — relief is the required table view,
+   * not a palette change) — these exact values must not be edited; see
+   * TrendsChart.tsx's header comment. */
+  --series-1: #2a78d6;
+  --series-2: #1baf7a;
+  --series-3: #eda100;
+  --series-4: #008300;
+  --series-5: #4a3aa7;
+  --series-6: #e34948;
+  --series-7: #e87ba4;
+  --series-8: #eb6834;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --border-color: #3a3a3a;
+    --muted-color: #aaaaaa;
+    --bg-subtle: #1c1c1c;
+    --tone-paid: #7cd992;
+    --tone-ok: #bbbbbb;
+    --tone-soon: #e0a742;
+    --tone-overdue: #e5817a;
+    --tone-unknown: #999999;
+    --amount-debit: #e5817a;
+    --amount-credit: #7cd992;
+    --chart-surface: #121212;
+    --series-1: #3987e5;
+    --series-2: #199e70;
+    --series-3: #c98500;
+    --series-4: #008300;
+    --series-5: #9085e9;
+    --series-6: #e66767;
+    --series-7: #d55181;
+    --series-8: #d95926;
+  }
+}
+
+body {
+  margin: 0;
+}
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.app-nav-brand {
+  font-weight: 700;
+  margin-right: auto;
+}
+.app-nav button {
+  border: none;
+}
+/* Styled off aria-current (not a parallel "active" class) so the visual
+   highlight and the assistive-tech announcement come from one attribute
+   and can't disagree. */
+.app-nav button[aria-current='page'] {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+h1 {
+  margin: 0 0 0.25rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+button:hover {
+  background: var(--bg-subtle);
+}
+
+/* Explicit background/color on BOTH select and option, not just
+ * :root's color-scheme (which is set, but Chrome still rendered the
+ * dropdown popup white-on-white in dark mode — user-reported): the
+ * popup list takes its colors from the option elements themselves, so
+ * styling only the closed control isn't enough. */
+select {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-subtle);
+  color: inherit;
+}
+option {
+  background-color: var(--bg-subtle);
+  color: inherit;
+}
+
+/* Hide the up/down spinner on number inputs everywhere (user revision):
+ * a fee amount or a due-day is typed, not nudged, and the arrows only
+ * added visual clutter. Where a keyboard arrow-key still increments a
+ * focused field, the inputs set step={1} so it moves by a whole unit,
+ * never the old 0.01 rupee. */
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.back-link {
+  border: none;
+  padding: 0;
+  margin-bottom: 1rem;
+  color: inherit;
+}
+.back-link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* --- Dashboard --- */
+
+.dashboard-header {
+  margin-bottom: 1.5rem;
+}
+.card-min-due {
+  color: var(--muted-color);
+}
+/* Now the dashboard's headline (the redundant "Kardabra" h1 was removed),
+ * so it carries a little more weight than muted body text. */
+.dashboard-summary {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.card-tile {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1rem;
+  cursor: pointer;
+  /* Flex column + a min height so every tile is the same shape and the
+   * action button (margin-top:auto below) lands at the same spot on each
+   * one, regardless of how much content sits above it. Grid stretch
+   * already equalises heights within a row; this floors short tiles too. */
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+}
+/* Bottom-anchors "Mark paid"/"Undo" (and the delete-confirm actions) so
+ * the button never shifts vertically with the content above it. */
+.card-action {
+  margin-top: auto;
+  align-self: flex-start;
+}
+.card-tile-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.card-nickname {
+  font-weight: 600;
+}
+.card-amount {
+  font-size: 1.25rem;
+  margin: 0.25rem 0;
+}
+.card-min-due {
+  margin: 0 0 0.25rem;
+}
+/* .due-status's color is set inline, from the same --tone-* variable
+ * dueStatus()'s `tone` field names — no per-tone class needed. */
+.due-status {
+  margin: 0 0 0.5rem;
+}
+
+/* --- Import --- */
+
+.dropzone {
+  border: 2px dashed var(--border-color);
+  border-radius: 10px;
+  padding: 2rem 1rem;
+  text-align: center;
+  margin: 1rem 0;
+}
+.button-like {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.button-like:hover {
+  background: var(--bg-subtle);
+}
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.plan-row {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.5rem;
+}
+.plan-row-file {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.plan-row-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted-color);
+}
+/* The "Name this card" field reads as a labelled control, not a bare box
+ * dropped among the metadata spans — the nickname is the card's only
+ * on-dashboard identifier now, so it's given prominence at import. */
+.nickname-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--muted-color);
+}
+.nickname-field input {
+  font: inherit;
+  color: var(--text-color, inherit);
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+}
+.badge {
+  border: 1px solid var(--tone-soon);
+  color: var(--tone-soon);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.85rem;
+}
+.error-text {
+  color: var(--amount-debit);
+}
+.import-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* --- Card detail --- */
+
+.card-detail-header {
+  margin-bottom: 1.5rem;
+}
+.statement-list {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+.statement-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  border-radius: 8px;
+  margin-bottom: 0.4rem;
+}
+.statement-row.selected {
+  background: var(--bg-subtle);
+  border-color: var(--muted-color);
+}
+.statement-period {
+  font-weight: 600;
+}
+/* The Transactions heading and its "Fix bill payment"/Save/Cancel
+ * controls share one row (same layout idea as .trends-header). */
+.txn-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.txn-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.txn-table th,
+.txn-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.amount-debit {
+  color: var(--amount-debit);
+}
+.amount-credit {
+  color: var(--amount-credit);
+}
+
+.rename-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+button.danger {
+  color: var(--tone-overdue);
+  border-color: var(--tone-overdue);
+}
+
+.credit-label {
+  color: var(--muted-color);
+  font-size: 0.85rem;
+}
+
+.icon-button {
+  border: none;
+  padding: 0.25rem;
+  line-height: 0;
+  color: var(--muted-color);
+}
+.icon-button:hover {
+  color: inherit;
+  background: var(--bg-subtle);
+}
+.tile-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+/* --- Fee label + card costs (Phase 5) --- */
+
+.fee-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+/* select styling comes from the global rule above (dark-mode fix) */
+.fee-label-row input {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+
+.fee-discrepancy {
+  color: var(--tone-soon);
+  margin: 0.5rem 0 0;
+}
+
+.charge-hint {
+  color: var(--tone-soon);
+  font-size: 0.85rem;
+}
+
+/* --- Spend trends chart (Phase 5) --- */
+
+.trends-section {
+  position: relative;
+  margin-top: 2rem;
+}
+.trends-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.trends-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin: 0.75rem 0;
+}
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: none;
+  padding: 0.1rem 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.legend-chip.dimmed {
+  opacity: 0.45;
+}
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.trends-chart-scroll {
+  overflow-x: auto;
+}
+/* 340px min-width: an iPhone SE (375px CSS width) minus .app's 1rem
+ * side padding leaves ~343px, so 6 months render without overflow-x
+ * ever engaging by default (the scroll container is a safety net for
+ * narrower-still viewports, not the normal state). No max-width: the
+ * chart fills the full content column like the card grid above it, so
+ * it's never a narrower, left-offset block (user revision — a capped,
+ * left-aligned chart read as off-centre against the full-width grid).
+ * Axis/label text is sized in viewBox units, so it scales with the svg
+ * rather than needing a width cap to stay proportional. */
+.trends-chart-scroll svg {
+  display: block;
+  min-width: 340px;
+  width: 100%;
+  height: auto;
+}
+.trends-segment {
+  cursor: pointer;
+}
+.trends-segment:focus-visible {
+  outline: 2px solid var(--muted-color);
+  outline-offset: 1px;
+}
+.trends-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 1;
+}
+.trends-tooltip strong {
+  font-weight: 600;
+}
