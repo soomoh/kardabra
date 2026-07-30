@@ -3,7 +3,7 @@ import type { ChangeEvent, DragEvent } from 'react';
 import { useDb } from '../db/useDb';
 import { useDataVersion } from '../context/DataVersionContext';
 import { getAllCards, getAllStatements } from '../db/db';
-import { parseStatement } from '../parser';
+import { parseStatement, type StatementErrorKind } from '../parser';
 import {
   planImport,
   commitImport,
@@ -12,14 +12,23 @@ import {
   type FileOutcome,
   type CommitUserInput,
 } from '../import/plan';
-import { buildFeedbackReport, type FeedbackEntry } from '../import/feedback';
-import { formatINR } from '../lib/money';
-import { formatPeriodLabel, formatDateLabel } from '../lib/dates';
+import {
+  buildFeedbackReport,
+  fileDiagnostic,
+  type FeedbackEntry,
+} from '../import/feedback';
+import { formatPeriodLabel } from '../lib/dates';
 import type { View } from '../App';
 
 interface ImportPageProps {
   setView: (view: View) => void;
 }
+
+// Rejection kinds that are a CORRECT classification, not a failure to read the
+// file — these are skipped cleanly and never prompt a "help us support this"
+// report. Everything else the parser couldn't read (no table, unknown dates, a
+// genuine error) is reportable.
+const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = ['savings-statement'];
 
 /**
  * The whole page's state as one discriminated union, not a pile of
@@ -80,11 +89,18 @@ function ImportPage({ setView }: ImportPageProps) {
   const db = useDb();
   const { bump } = useDataVersion();
   const [state, setState] = useState<ImportState>({ stage: 'idle' });
+  // Number-masked diagnostics for files that couldn't be parsed, keyed by file
+  // name — kept beside the plan (not in the state machine) since they're only
+  // read when building a report. Overwritten on each new batch.
+  const [diagnostics, setDiagnostics] = useState<Map<string, string>>(
+    new Map(),
+  );
 
   async function handleFiles(files: FileList) {
     if (db === null) return;
 
     const results: ParseResult[] = [];
+    const batchDiagnostics = new Map<string, string>();
     for (const file of Array.from(files)) {
       // Error containment at the file boundary (see plan.ts's header
       // comment): one bad file becomes one 'rejected'/'failed' row in the
@@ -94,8 +110,17 @@ function ImportPage({ setView }: ImportPageProps) {
         results.push({ fileName: file.name, parsed });
       } catch (error) {
         results.push({ fileName: file.name, error });
+        // Best-effort diagnostic so a genuinely unreadable file can be reported
+        // usefully; if even the bytes can't be read, skip it silently.
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          batchDiagnostics.set(file.name, fileDiagnostic(bytes));
+        } catch {
+          /* no diagnostic available for this file */
+        }
       }
     }
+    setDiagnostics(batchDiagnostics);
 
     // "planImport with fresh DB state" — read cards/statements right
     // before planning, not from some earlier snapshot, so duplicate
@@ -219,23 +244,30 @@ function ImportPage({ setView }: ImportPageProps) {
 
   const committing = state.stage === 'committing';
 
-  // Files the parser couldn't use, turned into a local report the user can
-  // share to get a new format supported. Built here, downloaded on the device
-  // (Blob + object URL) — nothing is uploaded.
+  // Only files the parser genuinely couldn't READ become a report. A cleanly
+  // classified skip (a savings statement, say) is the parser succeeding, not
+  // failing, so it never appears here. Each entry carries a number-masked
+  // diagnostic; the report is built and downloaded on the device — nothing is
+  // uploaded.
   const feedbackEntries: FeedbackEntry[] = [];
   for (const outcome of outcomes) {
-    if (outcome.kind === 'rejected') {
+    if (outcome.kind === 'failed') {
+      feedbackEntries.push({
+        fileName: outcome.fileName,
+        kind: 'failed',
+        detail: outcome.message,
+        diagnostic: diagnostics.get(outcome.fileName),
+      });
+    } else if (
+      outcome.kind === 'rejected' &&
+      !UNDERSTOOD_REJECTIONS.includes(outcome.errorKind)
+    ) {
       feedbackEntries.push({
         fileName: outcome.fileName,
         kind: 'rejected',
         errorKind: outcome.errorKind,
         detail: outcome.advice,
-      });
-    } else if (outcome.kind === 'failed') {
-      feedbackEntries.push({
-        fileName: outcome.fileName,
-        kind: 'failed',
-        detail: outcome.message,
+        diagnostic: diagnostics.get(outcome.fileName),
       });
     }
   }
@@ -247,7 +279,7 @@ function ImportPage({ setView }: ImportPageProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'kardabra-unrecognized-report.txt';
+    link.download = 'kardabra-unreadable-statements.txt';
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -304,17 +336,6 @@ function ImportPage({ setView }: ImportPageProps) {
                     )}
                     <span>{formatPeriodLabel(outcome.period)}</span>
                     <span>{outcome.parsed.transactions.length} txns</span>
-                    {outcome.parsed.summary.totalDue !== undefined && (
-                      <span>{formatINR(outcome.parsed.summary.totalDue)}</span>
-                    )}
-                    {outcome.parsed.summary.paymentDueDateISO !== undefined && (
-                      <span>
-                        due{' '}
-                        {formatDateLabel(
-                          outcome.parsed.summary.paymentDueDateISO,
-                        )}
-                      </span>
-                    )}
                     {showDueDayInput && (
                       <label>
                         Due day of month
@@ -404,9 +425,11 @@ function ImportPage({ setView }: ImportPageProps) {
       {feedbackEntries.length > 0 && (
         <section>
           <p className="muted">
-            Some files weren't recognized. Download a local report to help add
-            support for their format — it lists only file names and the reason,
-            never statement contents, and nothing leaves your device.
+            Kardabra couldn't read{' '}
+            {feedbackEntries.length === 1 ? 'one file' : 'some files'}. Download
+            a local report to help add support — it captures the file's
+            structure with numbers masked, stays on your device, and is yours to
+            review before sharing.
           </p>
           <button onClick={downloadReport}>Download report</button>
         </section>

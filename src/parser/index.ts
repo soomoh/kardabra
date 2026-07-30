@@ -69,6 +69,25 @@ export async function parseStatement(file: File): Promise<ParsedStatement> {
   return parseStatementBytes(file.name, bytes);
 }
 
+/** Best-effort row preview for diagnostics — the same content routing as
+ * parseStatementBytes, but it never throws, so a file that failed to parse can
+ * still be described. Returns whatever rows the reader produced (possibly none). */
+export function previewRows(bytes: Uint8Array): {
+  contentType: 'excel' | 'delimited';
+  rows: unknown[][];
+} {
+  const isExcel = looksLikeExcel(bytes);
+  const contentType = isExcel ? 'excel' : 'delimited';
+  try {
+    const rows = isExcel
+      ? loadExcelRows(bytes)
+      : parseDelimited(decodeText(bytes));
+    return { contentType, rows };
+  } catch {
+    return { contentType, rows: [] };
+  }
+}
+
 export type { Transaction, StatementSummary, ParsedStatement } from './types';
 export { StatementError, type StatementErrorKind } from './errors';
 export { cleanText, norm, cleanAmount } from './cells';
