@@ -3,6 +3,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 coverage/
+*.log
 
 # Secrets & environment
 .env*
@@ -29,7 +30,13 @@ debug/
 # Statements are user financial data. Make committing one impossible by accident:
 # ignore every statement-shaped file, then re-allow ONLY the synthetic test
 # fixtures (fabricated data, real layout — see tests/fixtures/README).
+# Formats the app can't even parse (.pdf, .ofx, .qif) are ignored too: an
+# unusable file is the one most likely to be dropped here and forgotten.
 *.csv
 *.xls
 *.xlsx
+*.xlsm
+*.pdf
+*.ofx
+*.qif
 !tests/fixtures/**

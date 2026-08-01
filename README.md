@@ -1,26 +1,21 @@
 # Kardabra
 
 A private, on-device credit-card statement tracker. Drag in the CSV or Excel
-statements your bank exports and Kardabra shows you what you spent, what's due
-and when, and what each card actually costs you in fees — **without any of your
-financial data ever leaving your device.**
+statements your bank exports, name each card and set its due day once, and
+Kardabra shows you what you spent, what's due and when.
 
 ## Privacy model
 
-Kardabra is local-first by design, not by promise:
+Kardabra is local-first by design:
 
-- Statements are parsed **in your browser**. Nothing is uploaded.
-- Everything is stored on your device in IndexedDB. There is no server, no
-  account, and no network request that carries your statement data.
-- The one place data could leave — the "unrecognized statement" report — is a
-  file you download and choose to share, and it contains only file names and the
-  parser's diagnosis, never statement contents.
+- Statements are parsed in your browser. Nothing is uploaded.
+- Everything is stored on your device in IndexedDB. There is no server, account, or telemetry involved.
 
-What Kardabra does **not** do yet: encrypt data at rest. It lives in your
-browser's IndexedDB in the clear, so treat it like any other app's local data on
+What Kardabra does **not** do yet: encrypt data at rest. Your data lives in your
+browser's IndexedDB in plaintext, so treat it like any other app's local data on
 a shared device.
 
-## Quickstart
+## How to use
 
 Requires Node 20+ (developed on Node 24).
 
@@ -29,22 +24,19 @@ npm install
 npm run dev      # start the app at the printed localhost URL
 ```
 
-Then open the app, go to **Import**, and drop in a statement file.
+Then open the app, go to **Import**, and drop in a statement file. Only credit card statements are supported.
 
 ## What it understands
 
 Kardabra reads credit-card statements as **CSV, `.xlsx`, or legacy `.xls`**, and
-decides the format from the file's contents, not its extension (banks mislabel
-both ways). It handles the common real-world messiness:
+decides the format from the file's contents.
+
+It handles the following:
 
 - delimiter auto-detection (`,`, `~`, `|`, tab, `;`) with RFC-4180 quoting;
 - several date formats, including dates stored as Excel serial numbers;
 - non-UTF-8 encodings (UTF-16 with a BOM, Windows-1252);
-- summary blocks in a few different shapes;
 - multiple credit/debit sign conventions.
-
-Bank-account (savings) statements are recognized and declined — Kardabra tracks
-credit cards only.
 
 ## Development
 
@@ -56,14 +48,12 @@ npm run build       # type-check and produce a production build
 ```
 
 Tests live in `tests/`, mirroring `src/`. Statement fixtures under
-`tests/fixtures/` are **synthetic** — fabricated data in real layouts — and are
-regenerated with `node tests/fixtures/generate.mjs`. See
+`tests/fixtures/` use fabricated synthetic data in real layouts. Regenerate with `node tests/fixtures/generate.mjs`. See
 [`tests/fixtures/README.md`](tests/fixtures/README.md).
 
 ## How to add support for a new statement format
 
-The parser is data-driven, so most new formats are a new table entry, not new
-code:
+The parser is data-driven, so most new formats can be supported with a new table entry:
 
 - **A new date format** → add a pattern to `DATE_FORMATS` in
   `src/parser/dates.ts`.
