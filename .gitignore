@@ -20,6 +20,7 @@ coverage/
 
 # Assistant & internal working artifacts — the public repo carries none of these
 CLAUDE.md
+AGENTS.md
 .claude/
 .specs/
 

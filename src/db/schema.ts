@@ -37,6 +37,9 @@ export interface CardRecord {
    * discrepancy note is what reads this against the observed net annual
    * fee (lib/charges.ts's annualFeeNet). */
   feeLabel?: { type: 'LTF' | 'FYF' | 'AMOUNT'; amount?: number };
+  /** ISO 4217 code from the card's statements; absent means INR (cards
+   * created before currencies were stored). */
+  currency?: string;
 }
 
 /** One imported statement file's metadata, one row per (card, period).
@@ -52,6 +55,18 @@ export interface StatementRecord {
   totalDue?: number;
   minDue?: number;
   creditLimit?: number;
+  /** v2: what the statement itself reported — see parser StatementSummary. */
+  currency?: string;
+  creditBalance?: number;
+  openingBalance?: number;
+  paymentsTotal?: number;
+  purchasesTotal?: number;
+  chargesTotal?: number;
+  /** Rows the parser skipped with a warning (0 when it read everything). */
+  skippedRows?: number;
+  /** v2: lib/txnId.ts statementFingerprint of the transaction list — how a
+   * re-import of the same file is recognised even with no card number. */
+  fingerprint?: string;
   fileName: string; // the uploaded file's own name, kept for the user's reference
   txnCount: number; // denormalised for the duplicate-detection "keep fullest" rule
   importedAt: string; // ISO date-time
@@ -64,6 +79,10 @@ export interface StatementRecord {
  * transaction by id, only to look transactions up by statement or by
  * card+date, which the two indexes below already cover. */
 export interface TransactionRecord {
+  /** v2: stable content-derived id (lib/txnId.ts) — the same purchase keeps
+   * its id across re-imports, which exports rely on for de-duplication.
+   * Not the store key (that stays the autoIncrement integer). */
+  id: string;
   statementId: string;
   cardId: string; // denormalised from the statement, so by-card-date needs no join
   dateISO: string;
@@ -149,7 +168,11 @@ export interface KardabraSchema extends DBSchema {
   transactions: {
     key: number; // autoIncrement, out-of-line (not a field on the value)
     value: TransactionRecord;
-    indexes: { 'by-statement': string; 'by-card-date': [string, string] };
+    indexes: {
+      'by-statement': string;
+      'by-card-date': [string, string];
+      'by-id': string;
+    };
   };
   cycles: {
     key: [string, string]; // [cardId, period] — keyPath, in-line

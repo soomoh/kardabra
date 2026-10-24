@@ -30,9 +30,31 @@ export interface Transaction {
 export interface StatementSummary {
   statementDateISO?: string;
   paymentDueDateISO?: string;
+  /** What the bank says is owed. A credit balance ("1,200.00 Cr" in the total
+   * due cell) is 0 here, with the surplus in `creditBalance` — nothing is due. */
   totalDue?: number;
   minDue?: number;
   creditLimit?: number;
+  /** Positive amount the bank owes the cardholder, when the statement closes
+   * in credit. */
+  creditBalance?: number;
+  /** The bank's own reconciliation line, when printed (HDFC "Opening Bal −
+   * Payment/Credit + Purchases/Debits + Finance Charges = Total Dues"; ICICI
+   * "Previous Balance", "Payments and Other Credits", "Purchases and Other
+   * Charges"; Axis "Opening Balance"). All positive magnitudes. */
+  openingBalance?: number;
+  paymentsTotal?: number;
+  purchasesTotal?: number;
+  chargesTotal?: number;
+}
+
+/** Something the parser chose to skip rather than fail on. Surfaced in import
+ * review so a partial read is never silent. */
+export interface ParseWarning {
+  kind: 'skipped-row';
+  /** 0-based row index in the file's rows. */
+  row: number;
+  reason: string;
 }
 
 /** The façade's return value — everything `parseStatement` recovers from
@@ -40,6 +62,10 @@ export interface StatementSummary {
 export interface ParsedStatement {
   fileName: string;
   last4: string | null;
+  /** ISO 4217 code inferred from the statement text (₹/Rs/INR → 'INR');
+   * 'INR' when nothing says otherwise. */
+  currency: string;
   summary: StatementSummary;
   transactions: Transaction[];
+  warnings: ParseWarning[];
 }

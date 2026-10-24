@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
-import { useDb } from '../db/useDb';
+import { describeDbError, useDb, useReportError } from '../db/DbProvider';
+import TotalsWarning from './TotalsWarning';
 import { useDataVersion } from '../context/DataVersionContext';
 import { getAllCards, getAllStatements } from '../db/db';
 import { parseStatement, type StatementErrorKind } from '../parser';
@@ -17,7 +18,7 @@ import {
   fileDiagnostic,
   type FeedbackEntry,
 } from '../import/feedback';
-import { formatPeriodLabel } from '../lib/dates';
+import { formatPeriodLabel, isValidDueDay } from '../lib/dates';
 import type { View } from '../App';
 
 interface ImportPageProps {
@@ -46,11 +47,17 @@ type ImportState =
   | { stage: 'idle' }
   | {
       stage: 'planned';
+      results: ParseResult[];
       outcomes: FileOutcome[];
       inputs: CommitUserInput;
       commitError?: string;
     }
-  | { stage: 'committing'; outcomes: FileOutcome[]; inputs: CommitUserInput };
+  | {
+      stage: 'committing';
+      results: ParseResult[];
+      outcomes: FileOutcome[];
+      inputs: CommitUserInput;
+    };
 
 /** An outcome's own file name, regardless of which variant it is —
  * 'new-statement' carries it nested inside `parsed`, the other three
@@ -78,7 +85,11 @@ function planIsComplete(
       const nickname = inputs.nicknames.get(key);
       if (nickname === undefined || nickname.trim() === '') return false;
     }
-    if (outcome.needsDueDay && inputs.dueDays.get(key) === undefined) {
+    const dueDay = inputs.dueDays.get(key);
+    if (
+      outcome.needsDueDay &&
+      (dueDay === undefined || !isValidDueDay(dueDay))
+    ) {
       return false;
     }
   }
@@ -87,6 +98,7 @@ function planIsComplete(
 
 function ImportPage({ setView }: ImportPageProps) {
   const db = useDb();
+  const reportError = useReportError();
   const { bump } = useDataVersion();
   const [state, setState] = useState<ImportState>({ stage: 'idle' });
   // Number-masked diagnostics for files that couldn't be parsed, keyed by file
@@ -97,8 +109,6 @@ function ImportPage({ setView }: ImportPageProps) {
   );
 
   async function handleFiles(files: FileList) {
-    if (db === null) return;
-
     const results: ParseResult[] = [];
     const batchDiagnostics = new Map<string, string>();
     for (const file of Array.from(files)) {
@@ -146,6 +156,7 @@ function ImportPage({ setView }: ImportPageProps) {
 
     setState({
       stage: 'planned',
+      results,
       outcomes,
       inputs: { nicknames, dueDays: new Map() },
     });
@@ -153,11 +164,12 @@ function ImportPage({ setView }: ImportPageProps) {
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
-    void handleFiles(event.dataTransfer.files);
+    void handleFiles(event.dataTransfer.files).catch(reportError);
   }
 
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
-    if (event.target.files !== null) void handleFiles(event.target.files);
+    if (event.target.files !== null)
+      void handleFiles(event.target.files).catch(reportError);
     event.target.value = ''; // allow re-selecting the same file(s) again
   }
 
@@ -185,18 +197,39 @@ function ImportPage({ setView }: ImportPageProps) {
   }
 
   async function handleCommit(
+    results: ParseResult[],
     outcomes: FileOutcome[],
     inputs: CommitUserInput,
   ) {
-    if (db === null) return;
-    setState({ stage: 'committing', outcomes, inputs });
+    setState({ stage: 'committing', results, outcomes, inputs });
     try {
       await commitImport(db, outcomes, inputs);
       bump();
       setView({ name: 'dashboard' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setState({ stage: 'planned', outcomes, inputs, commitError: message });
+      // A commit is several writes, so a failure can leave some of them done
+      // (a card created, a statement written). Re-plan against what is in the
+      // database now, so retrying can't create a second copy of that card.
+      bump();
+      // If even reading the database fails now, keep the old plan rather
+      // than leaving the page stuck on "Importing…".
+      let replanned = outcomes;
+      try {
+        replanned = planImport(
+          results,
+          await getAllCards(db),
+          await getAllStatements(db),
+        );
+      } catch {
+        /* keep the previous plan; the error below says what happened */
+      }
+      setState({
+        stage: 'planned',
+        results,
+        outcomes: replanned,
+        inputs,
+        commitError: describeDbError(error),
+      });
     }
   }
 
@@ -336,9 +369,21 @@ function ImportPage({ setView }: ImportPageProps) {
                     )}
                     <span>{formatPeriodLabel(outcome.period)}</span>
                     <span>{outcome.parsed.transactions.length} txns</span>
+                    <TotalsWarning
+                      summary={outcome.parsed.summary}
+                      transactions={outcome.parsed.transactions}
+                      skippedRows={outcome.parsed.warnings.length}
+                    />
                     {showDueDayInput && (
                       <label>
                         Due day of month
+                        {inputs.dueDays.has(key) &&
+                          !isValidDueDay(inputs.dueDays.get(key)!) && (
+                            <span className="error-text" role="alert">
+                              {' '}
+                              Enter a day from 1 to 31
+                            </span>
+                          )}
                         <input
                           type="number"
                           min={1}
@@ -447,7 +492,11 @@ function ImportPage({ setView }: ImportPageProps) {
           Start over
         </button>
         <button
-          onClick={() => void handleCommit(outcomes, inputs)}
+          onClick={() =>
+            void handleCommit(state.results, outcomes, inputs).catch(
+              reportError,
+            )
+          }
           disabled={committing || !planIsComplete(outcomes, inputs)}
         >
           {committing ? 'Importing…' : 'Import'}

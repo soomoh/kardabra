@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useDb } from '../db/useDb';
+import { useDb, useReportError } from '../db/DbProvider';
+import TotalsWarning from './TotalsWarning';
 import { useDataVersion } from '../context/DataVersionContext';
 import {
   getCard,
@@ -108,6 +109,7 @@ type FixMode = { mode: 'view' } | { mode: 'selecting'; checked: Set<number> };
 
 function CardDetail({ cardId, setView }: CardDetailProps) {
   const db = useDb();
+  const reportError = useReportError();
   const { version, bump } = useDataVersion();
   const [card, setCard] = useState<CardRecord | null>(null);
   const [statements, setStatements] = useState<StatementRecord[]>([]);
@@ -131,9 +133,12 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   // state, because the two controls save independently (a fee-amount
   // edit in progress must not block or get clobbered by a rename).
   const [feeAmountDraft, setFeeAmountDraft] = useState<string | null>(null);
+  const [feeError, setFeeError] = useState<string | null>(null);
+  // The card was deleted (another tab) or the id is stale.
+  const [missing, setMissing] = useState(false);
 
   async function saveFeeLabel(feeLabel: CardRecord['feeLabel']) {
-    if (db === null || card === null) return;
+    if (card === null) return;
     // A shallow-copy-then-delete, not a conditional spread: this is a
     // local mutation of a fresh object (never the `card` state itself),
     // and it's the plainest way to go from "has a feeLabel key" to "has
@@ -168,14 +173,19 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
 
   async function handleSaveFeeAmount() {
     if (feeAmountDraft === null) return;
-    const amount = Number(feeAmountDraft);
-    if (!Number.isFinite(amount) || amount < 0) return; // bad input: just don't save it
+    // Number('') is 0 — an empty box must not silently save a ₹0 fee.
+    const amount = feeAmountDraft.trim() === '' ? NaN : Number(feeAmountDraft);
+    if (!Number.isFinite(amount) || amount < 0) {
+      setFeeError('Enter the annual fee as an amount of 0 or more.');
+      return;
+    }
+    setFeeError(null);
     await saveFeeLabel({ type: 'AMOUNT', amount });
     setFeeAmountDraft(null);
   }
 
   async function handleRenameSave() {
-    if (db === null || card === null || nicknameDraft === null) return;
+    if (card === null || nicknameDraft === null) return;
     const trimmed = nicknameDraft.trim();
     if (trimmed === '') return; // a card must keep some name
     await putCard(db, { ...card, nickname: trimmed });
@@ -184,14 +194,12 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   }
 
   async function handleDeleteConfirmed() {
-    if (db === null) return;
     await deleteCardCascade(db, cardId);
     bump();
     setView({ name: 'dashboard' });
   }
 
   useEffect(() => {
-    if (db === null) return;
     let cancelled = false;
 
     (async () => {
@@ -206,6 +214,7 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
       if (cancelled) return;
 
       setCard(loadedCard ?? null);
+      setMissing(loadedCard === undefined);
       setStatements(loadedStatements);
       setTransactions(loadedTransactions);
       setCycles(loadedCycles);
@@ -217,12 +226,12 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
           ? current
           : (loadedStatements[0]?.id ?? null),
       );
-    })();
+    })().catch(reportError);
 
     return () => {
       cancelled = true;
     };
-  }, [db, cardId, version]);
+  }, [db, cardId, version, reportError]);
 
   // Switching which statement is selected must always drop back to plain
   // browsing — a half-finished payment-row selection made against the
@@ -241,11 +250,19 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
     </button>
   );
 
+  if (missing) {
+    return (
+      <div>
+        {backLink}
+        <p>This card isn't on this device any more.</p>
+      </div>
+    );
+  }
   if (card === null) {
     return (
       <div>
         {backLink}
-        <p>Loading…</p>
+        <p role="status">Loading…</p>
       </div>
     );
   }
@@ -306,7 +323,7 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   }
 
   async function handleSaveOverride() {
-    if (db === null || fixMode.mode !== 'selecting') return;
+    if (fixMode.mode !== 'selecting') return;
     if (selectedStatement === undefined) return;
     // Stored by VALUE (amount + payee), not by index — see PaymentMark's
     // comment: this exact statement's transactions get deleted and
@@ -323,7 +340,7 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   }
 
   async function handleResetOverride() {
-    if (db === null || selectedStatement === undefined) return;
+    if (selectedStatement === undefined) return;
     await setPaymentOverride(db, cardId, selectedStatement.period, undefined);
     setFixMode({ mode: 'view' });
     bump();
@@ -348,14 +365,15 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
               value={nicknameDraft}
               onChange={(e) => setNicknameDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleRenameSave();
+                if (e.key === 'Enter')
+                  void handleRenameSave().catch(reportError);
                 if (e.key === 'Escape') setNicknameDraft(null);
               }}
               aria-label="Card nickname"
               autoFocus
             />
             <button
-              onClick={() => void handleRenameSave()}
+              onClick={() => void handleRenameSave().catch(reportError)}
               disabled={nicknameDraft.trim() === ''}
             >
               Save
@@ -393,7 +411,7 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
             <div className="import-actions">
               <button
                 className="danger"
-                onClick={() => void handleDeleteConfirmed()}
+                onClick={() => void handleDeleteConfirmed().catch(reportError)}
               >
                 Delete permanently
               </button>
@@ -408,7 +426,9 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
             <select
               value={feeTypeOf(card)}
               onChange={(e) =>
-                void handleFeeTypeChange(e.target.value as FeeType)
+                void handleFeeTypeChange(e.target.value as FeeType).catch(
+                  reportError,
+                )
               }
             >
               <option value="NONE">Not set</option>
@@ -457,14 +477,33 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
                   value={feeAmountDraft}
                   onChange={(e) => setFeeAmountDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleSaveFeeAmount();
+                    if (e.key === 'Enter')
+                      void handleSaveFeeAmount().catch(reportError);
                     if (e.key === 'Escape') setFeeAmountDraft(null);
                   }}
                   aria-label="Annual fee amount"
+                  aria-invalid={feeError !== null}
+                  aria-describedby={feeError ? 'fee-error' : undefined}
                   autoFocus
                 />
-                <button onClick={() => void handleSaveFeeAmount()}>Save</button>
-                <button onClick={() => setFeeAmountDraft(null)}>Cancel</button>
+                <button
+                  onClick={() => void handleSaveFeeAmount().catch(reportError)}
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setFeeAmountDraft(null);
+                    setFeeError(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                {feeError && (
+                  <p id="fee-error" className="error-text" role="alert">
+                    {feeError}
+                  </p>
+                )}
               </>
             ))}
         </div>
@@ -554,6 +593,13 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
 
       {selectedStatementId !== null && (
         <section>
+          {selectedStatement !== undefined && (
+            <TotalsWarning
+              summary={selectedStatement}
+              transactions={selectedTransactions}
+              skippedRows={selectedStatement.skippedRows ?? 0}
+            />
+          )}
           <div className="txn-header">
             <h2>Transactions</h2>
             {/* One button for the whole statement, not one per row: the
@@ -564,14 +610,22 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
               <div className="import-actions">
                 <button onClick={handleStartFix}>Fix bill payment</button>
                 {selectedCycle?.paymentOverride !== undefined && (
-                  <button onClick={() => void handleResetOverride()}>
+                  <button
+                    onClick={() =>
+                      void handleResetOverride().catch(reportError)
+                    }
+                  >
                     Reset to automatic
                   </button>
                 )}
               </div>
             ) : (
               <div className="import-actions">
-                <button onClick={() => void handleSaveOverride()}>Save</button>
+                <button
+                  onClick={() => void handleSaveOverride().catch(reportError)}
+                >
+                  Save
+                </button>
                 <button onClick={() => setFixMode({ mode: 'view' })}>
                   Cancel
                 </button>

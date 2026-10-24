@@ -10,8 +10,11 @@ import { looksLikeExcel, loadExcelRows } from './excel';
 import { parseDelimited } from './csv';
 import { findTableHeader } from './table';
 import { extractSummary } from './summary';
-import { extractTransactions } from './transactions';
+import { extractTransactionsWithWarnings } from './transactions';
+import { inferLocale } from './locale';
+import { inferCurrency } from './currency';
 import { accountLast4 } from './account';
+import { rowsFromPdfPages, type PdfTextItem } from './pdfRows';
 import type { ParsedStatement } from './types';
 
 /**
@@ -30,16 +33,40 @@ export function parseStatementBytes(
   const rows: unknown[][] = looksLikeExcel(bytes)
     ? loadExcelRows(bytes)
     : parseDelimited(decodeText(bytes));
+  return parseRows(fileName, rows);
+}
 
+/** Parse a PDF statement from its positioned text (what pdf.js extracts, or
+ * an anonymized `kardabra-pdf-text/1` file) — rows are rebuilt from the
+ * text's geometry, then read exactly like a spreadsheet's. */
+export function parsePdfText(
+  fileName: string,
+  pages: { items: PdfTextItem[] }[],
+): ParsedStatement {
+  return parseRows(fileName, rowsFromPdfPages(pages));
+}
+
+/** The shared pipeline: rows (from any container) → a parsed statement. */
+export function parseRows(
+  fileName: string,
+  rows: unknown[][],
+): ParsedStatement {
   // One header scan feeds both extractors: extractSummary needs headerAt to
   // know where the metadata block ends, and extractTransactions needs the
   // resolved table. Passing `found` in avoids scanning the rows twice.
   const found = findTableHeader(rows);
-  const summary = extractSummary(rows, found.headerAt);
-  const transactions = extractTransactions(rows, found);
-  const last4 = accountLast4(rows);
+  // Decimal style and date order are decided once, from the whole file.
+  const locale = inferLocale(rows, found);
+  const summary = extractSummary(rows, found.headerAt, locale);
+  const { transactions, warnings } = extractTransactionsWithWarnings(
+    rows,
+    found,
+    locale,
+  );
+  const last4 = accountLast4(rows, locale.dateOrder);
+  const currency = inferCurrency(rows, found);
 
-  return { fileName, last4, summary, transactions };
+  return { fileName, last4, currency, summary, transactions, warnings };
 }
 
 /**
@@ -50,7 +77,7 @@ export function parseStatementBytes(
  * Windows-1252, the single-byte encoding those legacy exports almost always
  * use. TextDecoder strips a leading BOM on its own.
  */
-function decodeText(bytes: Uint8Array): string {
+export function decodeText(bytes: Uint8Array): string {
   if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
     return new TextDecoder('utf-16le').decode(bytes);
   }
@@ -88,13 +115,31 @@ export function previewRows(bytes: Uint8Array): {
   }
 }
 
-export type { Transaction, StatementSummary, ParsedStatement } from './types';
+export type {
+  Transaction,
+  StatementSummary,
+  ParsedStatement,
+  ParseWarning,
+} from './types';
 export { StatementError, type StatementErrorKind } from './errors';
-export { cleanText, norm, cleanAmount } from './cells';
-export { parseDate } from './dates';
-export { parseDelimited } from './csv';
+export {
+  cleanText,
+  norm,
+  cleanAmount,
+  parseAmount,
+  type ParsedAmount,
+  type AmountMarker,
+  type DecimalStyle,
+} from './cells';
+export { parseDate, inferDateOrder, type DateOrder } from './dates';
+export { inferLocale, type Locale } from './locale';
+export { inferCurrency } from './currency';
+export { parseDelimited, detectDelimited } from './csv';
 export { resolveTable, findTableHeader, type Table } from './table';
 export { loadExcelRows, looksLikeExcel } from './excel';
 export { extractSummary } from './summary';
-export { extractTransactions } from './transactions';
+export {
+  extractTransactions,
+  extractTransactionsWithWarnings,
+} from './transactions';
 export { accountLast4 } from './account';

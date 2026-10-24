@@ -157,3 +157,8 @@ export function formatDateLabel(iso: string): string {
   const [, year, month, day] = match;
   return `${day}-${month}-${year}`;
 }
+
+/** A due day the user can actually mean: a whole day of the month. */
+export function isValidDueDay(day: number): boolean {
+  return Number.isInteger(day) && day >= 1 && day <= 31;
+}

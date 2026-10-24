@@ -16,6 +16,7 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { actionableCycle } from '../lib/cycles';
+import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
 import {
   identifyPaymentIndices,
   netSpend,
@@ -30,42 +31,95 @@ import type {
 } from './schema';
 
 const DB_NAME = 'kardabra';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-/** Open (and, on first run, create) the database. Safe to call more than
- * once — IndexedDB itself de-dupes concurrent opens of the same
- * name+version, and idb's `upgrade` callback only fires when the stored
- * version is behind `DB_VERSION`. */
-export function openKardabraDb(): Promise<IDBPDatabase<KardabraSchema>> {
+/** What the app needs to hear about while the database is open. */
+export interface DbLifecycle {
+  /** An older version is open in another tab and is holding up the upgrade. */
+  onBlocked?: () => void;
+  /** A newer version of the app wants to upgrade the database; this
+   * connection has been closed and the page must reload. */
+  onVersionChange?: () => void;
+}
+
+/** Open (creating or upgrading as needed) the database. Each schema version
+ * is one step in `upgrade`, run only for versions the stored database is
+ * behind — so a v1 user upgrades in place and a new user runs every step. */
+export function openKardabraDb(
+  lifecycle: DbLifecycle = {},
+): Promise<IDBPDatabase<KardabraSchema>> {
   return openDB<KardabraSchema>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      const cards = db.createObjectStore('cards', { keyPath: 'id' });
-      cards.createIndex('by-last4', 'last4');
-
-      const statements = db.createObjectStore('statements', { keyPath: 'id' });
-      // unique: true — a (cardId, period) pair identifies at most one
-      // statement; putStatementWithTransactions relies on this index to
-      // find "the" existing statement to replace, not "a" one of several.
-      statements.createIndex('by-card-period', ['cardId', 'period'], {
-        unique: true,
-      });
-
-      // No keyPath: the key (an autoIncrement integer) is out-of-line,
-      // not a field on TransactionRecord — nothing ever needs to name one
-      // transaction directly, only look several up via an index.
-      const transactions = db.createObjectStore('transactions', {
-        autoIncrement: true,
-      });
-      transactions.createIndex('by-statement', 'statementId');
-      transactions.createIndex('by-card-date', ['cardId', 'dateISO']);
-
-      // keyPath is an array here (an in-line compound key): CycleRecord
-      // already carries both cardId and period as real fields, so there's
-      // no separate id to invent.
-      db.createObjectStore('cycles', { keyPath: ['cardId', 'period'] });
-
-      db.createObjectStore('settings', { keyPath: 'key' });
+    async upgrade(db, oldVersion, _newVersion, tx) {
+      if (oldVersion < 1) {
+        const cards = db.createObjectStore('cards', { keyPath: 'id' });
+        cards.createIndex('by-last4', 'last4');
+        const statements = db.createObjectStore('statements', {
+          keyPath: 'id',
+        });
+        // unique: putStatementWithTransactions replaces "the" statement for
+        // a (cardId, period), so there must never be two.
+        statements.createIndex('by-card-period', ['cardId', 'period'], {
+          unique: true,
+        });
+        const transactions = db.createObjectStore('transactions', {
+          autoIncrement: true,
+        });
+        transactions.createIndex('by-statement', 'statementId');
+        transactions.createIndex('by-card-date', ['cardId', 'dateISO']);
+        db.createObjectStore('cycles', { keyPath: ['cardId', 'period'] });
+        db.createObjectStore('settings', { keyPath: 'key' });
+      }
+      if (oldVersion < 2) {
+        // Stable transaction ids. Existing rows are backfilled per statement
+        // in key order — the order they were written in, i.e. statement order
+        // — so the ids match what a re-import would produce. Only IDB
+        // requests are awaited here (txnId is synchronous), which keeps the
+        // upgrade transaction alive.
+        const transactions = tx.objectStore('transactions');
+        transactions.createIndex('by-id', 'id');
+        const cards = new Map(
+          (await tx.objectStore('cards').getAll()).map((c) => [c.id, c]),
+        );
+        const byStatement = new Map<
+          string,
+          { key: number; value: TransactionRecord }[]
+        >();
+        let cursor = await transactions.openCursor();
+        while (cursor) {
+          const rows = byStatement.get(cursor.value.statementId) ?? [];
+          rows.push({ key: cursor.primaryKey, value: cursor.value });
+          byStatement.set(cursor.value.statementId, rows);
+          cursor = await cursor.continue();
+        }
+        const statements = tx.objectStore('statements');
+        for (const [statementId, rows] of byStatement) {
+          const card = cards.get(rows[0].value.cardId);
+          const key = card ? cardIdKey(card) : rows[0].value.cardId;
+          const values = rows.map((r) => r.value);
+          const ids = transactionIds(key, values);
+          for (const [i, row] of rows.entries()) {
+            await transactions.put({ ...row.value, id: ids[i] }, row.key);
+          }
+          const statement = await statements.get(statementId);
+          if (statement !== undefined) {
+            await statements.put({
+              ...statement,
+              fingerprint: statementFingerprint(values),
+            });
+          }
+        }
+      }
     },
+    blocked() {
+      lifecycle.onBlocked?.();
+    },
+    blocking() {
+      lifecycle.onVersionChange?.();
+    },
+  }).then((db) => {
+    // Close as soon as another tab asks, so its upgrade isn't stuck behind us.
+    db.addEventListener('versionchange', () => db.close());
+    return db;
   });
 }
 

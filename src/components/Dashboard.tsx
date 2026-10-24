@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useDb } from '../db/useDb';
+import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
 import {
   getAllCards,
@@ -30,13 +30,13 @@ const MIN_STATEMENTS_FOR_TRENDS = 1;
 
 function Dashboard({ setView }: DashboardProps) {
   const db = useDb();
+  const reportError = useReportError();
   const { version, bump } = useDataVersion();
   const [entries, setEntries] = useState<CardWithCycle[] | null>(null);
   const [trends, setTrends] = useState<MonthlyTrends | null>(null);
   const [statementCount, setStatementCount] = useState(0);
 
   useEffect(() => {
-    if (db === null) return;
     let cancelled = false;
 
     (async () => {
@@ -60,15 +60,14 @@ function Dashboard({ setView }: DashboardProps) {
       // re-deriving it from transactions, so it can never disagree with
       // what CardDetail's statement rows or this dashboard's own tiles show.
       setTrends(monthlyTrends(cards, cycles));
-    })();
+    })().catch(reportError);
 
     return () => {
       cancelled = true;
     };
-  }, [db, version]);
+  }, [db, version, reportError]);
 
   async function handleTogglePaid(cardId: string, cycle: CycleRecord) {
-    if (db === null) return;
     // Toggle: an already-paid cycle un-pays (paidAt -> null); an unpaid
     // one is marked paid as of today.
     const nextPaidAt = cycle.paidAt === undefined ? todayISO() : null;
@@ -77,13 +76,11 @@ function Dashboard({ setView }: DashboardProps) {
   }
 
   async function handleRename(card: CardRecord, nickname: string) {
-    if (db === null) return;
     await putCard(db, { ...card, nickname });
     bump();
   }
 
   async function handleDelete(cardId: string) {
-    if (db === null) return;
     await deleteCardCascade(db, cardId);
     bump();
   }
@@ -123,10 +120,13 @@ function Dashboard({ setView }: DashboardProps) {
             cycle={cycle}
             onOpen={() => setView({ name: 'card', cardId: card.id })}
             onTogglePaid={() => {
-              if (cycle !== null) void handleTogglePaid(card.id, cycle);
+              if (cycle !== null)
+                void handleTogglePaid(card.id, cycle).catch(reportError);
             }}
-            onRename={(nickname) => void handleRename(card, nickname)}
-            onDelete={() => void handleDelete(card.id)}
+            onRename={(nickname) =>
+              void handleRename(card, nickname).catch(reportError)
+            }
+            onDelete={() => void handleDelete(card.id).catch(reportError)}
           />
         ))}
       </div>

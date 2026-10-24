@@ -31,6 +31,8 @@ const noAsk: CommitUserInput = { nicknames: new Map(), dueDays: new Map() };
 const september: ParsedStatement = {
   fileName: 'sep.csv',
   last4: '4321',
+  currency: 'INR',
+  warnings: [],
   summary: {
     statementDateISO: '2025-09-30',
     paymentDueDateISO: '2025-10-18',
@@ -48,6 +50,8 @@ const september: ParsedStatement = {
 const october: ParsedStatement = {
   fileName: 'oct.csv',
   last4: '4321',
+  currency: 'INR',
+  warnings: [],
   summary: { statementDateISO: '2025-10-31', paymentDueDateISO: '2025-11-18' },
   transactions: [
     { dateISO: '2025-10-02', payee: 'NEFT TRANSFER', amount: 8000 },

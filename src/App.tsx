@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DataVersionProvider } from './context/DataVersionContext';
+import { DbProvider } from './db/DbProvider';
 import Dashboard from './components/Dashboard';
 import ImportPage from './components/ImportPage';
 import CardDetail from './components/CardDetail';
@@ -42,11 +43,13 @@ function App() {
     <DataVersionProvider>
       <div className="app">
         {nav}
-        {view.name === 'dashboard' && <Dashboard setView={setView} />}
-        {view.name === 'import' && <ImportPage setView={setView} />}
-        {view.name === 'card' && (
-          <CardDetail cardId={view.cardId} setView={setView} />
-        )}
+        <DbProvider>
+          {view.name === 'dashboard' && <Dashboard setView={setView} />}
+          {view.name === 'import' && <ImportPage setView={setView} />}
+          {view.name === 'card' && (
+            <CardDetail cardId={view.cardId} setView={setView} />
+          )}
+        </DbProvider>
       </div>
     </DataVersionProvider>
   );

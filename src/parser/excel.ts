@@ -27,14 +27,13 @@
  *     cells.ts's `cleanText`/`cleanAmount` (which already treat
  *     `null`/`undefined` identically) never have to special-case a
  *     missing trailing cell.
- *   - `cellDates` is left at its default (off). No fixture seen so far has
- *     a numeric- or date-*typed* cell — every bank exports amounts and
- *     dates as text — so a statement that stores dates as real Excel
- *     date-serial cells would come through as a raw serial number, which
- *     `parseDate` does not currently handle. If that shows up in a real
- *     statement, `cellDates: true` plus a `Date`-typed branch in
- *     `parseDate` is the fix; deferred until a fixture demonstrates it's
- *     needed (YAGNI — don't guess at a shape no real file has shown yet).
+ *   - `cellDates` is left at its default (off). Most banks export dates as
+ *     text, but some store real Excel date-serial cells; with `cellDates`
+ *     off those arrive as raw serial numbers, and `parseDate` handles the
+ *     numeric-serial case directly (see `isoFromExcelSerial` in dates.ts).
+ *     Turning `cellDates` on would instead hand back `Date` objects — an
+ *     extra typed branch to carry — for no gain, since the serial path
+ *     already round-trips correctly. Left off deliberately.
  */
 
 import * as XLSX from 'xlsx';

@@ -17,7 +17,7 @@ a shared device.
 
 ## How to use
 
-Requires Node 20+ (developed on Node 24).
+Requires Node 22.13+ or 24+ (developed on Node 24).
 
 ```bash
 npm install
@@ -64,7 +64,13 @@ The parser is data-driven, so most new formats can be supported with a new table
   `src/lib/charges.ts` or `src/lib/spend.ts`.
 
 Add a synthetic fixture reproducing the layout to `tests/fixtures/` and a test
-asserting the expected parse. If a real statement isn't recognized, the Import
+asserting the expected parse. To turn a real statement into a shareable
+synthetic one (same layout; names, merchants, card digits replaced; dates
+shifted; amounts scaled), run `npm run anonymize -- path/to/statements/*` and read
+the report it writes next to each output before sharing. For
+password-protected PDFs it asks once for your name, date of birth and cards'
+last four digits and tries each bank's usual password patterns; nothing you
+type is stored. If a real statement isn't recognized, the Import
 page can export a diagnostic report to help.
 
 ## Architecture
@@ -81,4 +87,5 @@ page can export a diagnostic report to help.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Third-party attributions:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

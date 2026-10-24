@@ -30,6 +30,8 @@ describe('hdfc_style.csv — ~-delimited, Debit/Credit marker, full summary', ()
     expect(parse('hdfc_style.csv')).toEqual({
       fileName: 'hdfc_style.csv',
       last4: '4321',
+      currency: 'INR',
+      warnings: [],
       summary: {
         statementDateISO: '2025-10-13',
         paymentDueDateISO: '2025-11-02',
@@ -51,6 +53,8 @@ describe('layout3_incell.csv — comma-delimited, in-cell Cr, quoted fields', ()
     expect(parse('layout3_incell.csv')).toEqual({
       fileName: 'layout3_incell.csv',
       last4: null, // no card number anywhere in this statement
+      currency: 'INR',
+      warnings: [],
       summary: {
         statementDateISO: '2025-10-15',
         paymentDueDateISO: '2025-11-05',
@@ -70,6 +74,8 @@ describe('axis_style.xlsx — .xlsx, newline summary block, wrapped narration', 
     expect(parse('axis_style.xlsx')).toEqual({
       fileName: 'axis_style.xlsx',
       last4: '7788',
+      currency: 'INR',
+      warnings: [],
       summary: {
         statementDateISO: '2025-11-05',
         paymentDueDateISO: '2025-11-30',
@@ -93,6 +99,8 @@ describe('legacy.xls — legacy OLE2 container', () => {
     expect(parse('legacy.xls')).toEqual({
       fileName: 'legacy.xls',
       last4: null,
+      currency: 'INR',
+      warnings: [],
       summary: { statementDateISO: '2025-10-10' },
       transactions: [
         { dateISO: '2025-10-01', payee: 'GROCERY MART', amount: -800 },

@@ -253,3 +253,70 @@ describe('billUnderpaid — soft interest warning, total-credits semantics', () 
     expect(billUnderpaid(0, 0)).toBe(false);
   });
 });
+
+describe('hasPaymentKeyword — phrases, not the bare word "payment"', () => {
+  const pay: [string, boolean][] = [
+    ['PAYMENT RECEIVED - THANK YOU', true],
+    ['PAYMENT-THANK YOU', true],
+    ['BBPS PAYMENT', true],
+    ['NEFT PAYMENT', true],
+    ['IMPS PAYMENT', true],
+    ['UPI PAYMENT', true],
+    ['CC PAYMENT', true],
+    ['PAYMENT FROM 1234', true],
+    ['AUTOPAY', true],
+    ['AUTO DEBIT', true],
+    ['XYZ PAYMENTS BANK REFUND', false], // a merchant refund, not a bill payment
+    ['LATE PAYMENT FEE REVERSAL', false], // fee reversal, not a bill payment
+    ['LATE PAYMENT FEE', false],
+    ['PAYMENT GATEWAY CHARGE', false],
+  ];
+  it.each(pay)('hasPaymentKeyword(%j) = %s', (payee, expected) => {
+    expect(hasPaymentKeyword(payee)).toBe(expected);
+  });
+
+  it('refund from a "PAYMENTS" merchant still reduces spend (only the bill payment is excluded)', () => {
+    const txns = [
+      { payee: 'SHOP A', amount: -1000 },
+      { payee: 'XYZ PAYMENTS BANK REFUND', amount: 500 },
+      { payee: 'PAYMENT RECEIVED - THANK YOU', amount: 3000 },
+    ];
+    const idx = identifyPaymentIndices(txns, { priorExpectedDue: 3000 });
+    expect(idx).toEqual([2]);
+    expect(netSpend(txns, idx)).toBe(500);
+  });
+
+  it('AUTOPAY bill payment (matches prior due 3000) is excluded from spend even when a bigger refund exists', () => {
+    const txns = [
+      { payee: 'SHOP A', amount: -1000 },
+      { payee: 'AUTOPAY', amount: 3000 },
+      { payee: 'FLIGHT CANCEL REFUND', amount: 4000 },
+    ];
+    // prior due 3000 -> AUTOPAY is the payment; refund of 4000 reduces spend
+    const idx = identifyPaymentIndices(txns, { priorExpectedDue: 3000 });
+    expect(idx).toEqual([1]);
+  });
+});
+
+// Review fix: common bill-payment payees the phrase list missed, and the
+// dash normalisation that made "AUTO-DEBIT" unreachable.
+describe('hasPaymentKeyword — whole-word "payment" and dash handling', () => {
+  it.each([
+    'CREDIT CARD PAYMENT',
+    'PAYMENT BY NEFT',
+    'CRED CLUB PAYMENT',
+    'AUTO-DEBIT CC 4321',
+    'Payment Received - Thank You',
+  ])('%s is a bill payment', (payee) => {
+    expect(hasPaymentKeyword(payee)).toBe(true);
+  });
+
+  it.each([
+    'XYZ PAYMENTS BANK REFUND',
+    'LATE PAYMENT FEE REVERSAL',
+    'LATE PAYMENT CHARGES',
+    'PAYMENT GATEWAY CHARGE',
+  ])('%s is not', (payee) => {
+    expect(hasPaymentKeyword(payee)).toBe(false);
+  });
+});

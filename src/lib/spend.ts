@@ -22,7 +22,8 @@
  *      are"). Always wins: a human looking at their own bank statement
  *      knows more than any heuristic below.
  *   2. a PAYMENT KEYWORD match on the payee — every credit whose payee
- *      mentions 'payment', 'bppy' or 'bbps' (see PAYMENT_KEYWORDS below).
+ *      matches a payment phrase such as 'payment received', 'bppy' or
+ *      'autopay' (see PAYMENT_KEYWORDS below).
  *      This is how splits are caught automatically: every BPPY line in a
  *      two-part payment matches, so all of them are excluded together.
  *   3. an AMOUNT MATCH against the prior statement's expected due — no
@@ -63,15 +64,44 @@
 // would UNDERSTATE it instead. A narrow keyword list produces false
 // negatives (a payment falls through to a lower rung), which is the safer
 // failure: rungs 3 and 4 below exist precisely to catch what rung 2 misses.
-export const PAYMENT_KEYWORDS = ['payment', 'bppy', 'bbps'];
+//
+// The word "payment" counts only as a whole word: "XYZ PAYMENTS BANK
+// REFUND" (a Paytm/Airtel Payments Bank merchant refund) has "payments", not
+// "payment", and the exclusions below veto fee lines that mention it.
+// Matched against the lowercased payee with dashes and runs of whitespace
+// collapsed to single spaces ("AUTO-DEBIT" -> "auto debit").
+export const PAYMENT_KEYWORDS: RegExp[] = [
+  /\bpayment\b/,
+  /\bpymt\b/,
+  /\bthank you\b/,
+  /\bbppy\b/,
+  /\bbbps\b/,
+  /\bautopay\b/,
+  /\bauto debit\b/,
+];
 
-/** Does this payee mention a payment keyword? Case-insensitive substring
- * match — bank payee strings carry inconsistent casing ('BPPY CC PAYMENT'
- * vs 'Bppy Cc Payment') and this only needs to catch the word, not parse
- * the payee's structure. */
+// Payee text that vetoes a keyword match: a fee or its reversal is a charge
+// line, not the bill payment, and a "... Payments Bank" merchant is just a
+// merchant (listed for "PAYMENTS BANK ... PAYMENT" style narrations).
+export const PAYMENT_EXCLUSIONS: RegExp[] = [
+  /\bpayments bank\b/,
+  /\bpayment gateway\b/,
+  /\blate payment (fee|charge)/,
+  /\blate fee\b/,
+  /\breversal\b/,
+];
+
+/** Does this payee name a bill payment (and no exclusion)? Case-insensitive
+ * — bank payee strings carry inconsistent casing ('BPPY CC PAYMENT' vs
+ * 'Bppy Cc Payment'). */
 export function hasPaymentKeyword(payee: string): boolean {
-  const lower = payee.toLowerCase();
-  return PAYMENT_KEYWORDS.some((keyword) => lower.includes(keyword));
+  const text = payee
+    .toLowerCase()
+    .replace(/[-\u2013\u2014]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (PAYMENT_EXCLUSIONS.some((re) => re.test(text))) return false;
+  return PAYMENT_KEYWORDS.some((re) => re.test(text));
 }
 
 /** One payment row, identified by VALUE (amount + payee), not by array

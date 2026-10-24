@@ -34,6 +34,8 @@ describe('Excel serial dates', () => {
     expect(parse('serial_dates.xlsx')).toEqual({
       fileName: 'serial_dates.xlsx',
       last4: null,
+      currency: 'INR',
+      warnings: [],
       summary: { statementDateISO: '2025-11-15' },
       transactions: [
         { dateISO: '2025-11-03', payee: 'STORE ONE', amount: -1000 },

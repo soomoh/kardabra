@@ -6,12 +6,12 @@
  */
 
 import { cleanText } from './cells';
-import { parseDate } from './dates';
+import { parseDate, type DateOrder } from './dates';
 import { resolveTable, type Table } from './table';
 import { StatementError } from './errors';
 
 // A card/account number as banks print it: 12-19 digits with X or *
-// masking, e.g. "4823 41XX XXXX 2836", "4315XXXXXXXX2008", "056478******9001".
+// masking, e.g. "4000 12XX XXXX 1111", "4111XXXXXXXX2222", "400012******3333".
 const MASKED_NUMBER = /(?<![\dXx*])[\dXx*]{12,19}(?![\dXx*])/g;
 
 function maskedLast4(cell: string, minLen: number): string | null {
@@ -38,7 +38,10 @@ function maskedLast4(cell: string, minLen: number): string | null {
  * sit in a narrow row inside the table (ICICI card CSVs embed the card
  * number there), so exclusion is by shape, not by position alone.
  */
-export function accountLast4(rows: unknown[][]): string | null {
+export function accountLast4(
+  rows: unknown[][],
+  dateOrder: DateOrder = 'dmy',
+): string | null {
   let table: Table | null = null;
   let headerAt = -1;
   for (let i = 0; i < rows.length; i++) {
@@ -59,7 +62,7 @@ export function accountLast4(rows: unknown[][]): string | null {
     if (table === null || i <= headerAt || row.length < table.minWidth)
       return false;
     try {
-      parseDate(row[table.dateCol]);
+      parseDate(row[table.dateCol], dateOrder);
       return true;
     } catch (error) {
       if (error instanceof StatementError && error.kind === 'unrecognised-date')

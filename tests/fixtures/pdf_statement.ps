@@ -1,0 +1,20 @@
+%!PS
+% Synthetic credit-card statement (fabricated data, realistic layout) used to
+% generate pdf_statement.pdf and pdf_statement_locked.pdf. Regenerate with
+% tests/fixtures/generate-pdf.sh (needs Ghostscript).
+/Helvetica findfont 10 scalefont setfont
+/t { moveto show } def
+(EXAMPLE BANK Credit Card Statement) 50 760 t
+(JANE DOE) 50 744 t
+(12 SAMPLE ROAD, PUNE) 50 732 t
+(Card No: 4111 11XX XXXX 4242) 50 716 t
+(Statement Date) 50 696 t (20/10/2025) 200 696 t
+(Payment Due Date) 50 682 t (09/11/2025) 200 682 t
+(Total Amount Due) 50 668 t (12,345.67) 200 668 t
+(Minimum Amount Due) 50 654 t (617.28) 200 654 t
+(Credit Limit) 50 640 t (2,00,000.00) 200 640 t
+(Date) 50 610 t (Transaction Details) 130 610 t (Amount) 400 610 t (Debit/Credit) 480 610 t
+(20/09/2025) 50 594 t (CAFE MOCHA KORAMANGALA) 130 594 t (1,500.00) 400 594 t (Dr) 480 594 t
+(22/09/2025) 50 580 t (PAYMENT RECEIVED THANK YOU) 130 580 t (5,000.00) 400 580 t (Cr) 480 580 t
+(25/09/2025) 50 566 t (BOOK NOOK INDIRANAGAR) 130 566 t (450.50) 400 566 t (Dr) 480 566 t
+showpage

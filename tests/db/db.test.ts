@@ -1,4 +1,6 @@
 import 'fake-indexeddb/auto';
+import { openDB } from 'idb';
+import { statementFingerprint, transactionIds } from '../../src/lib/txnId';
 import { beforeEach, describe, it, expect } from 'vitest';
 import {
   openKardabraDb,
@@ -46,7 +48,7 @@ beforeEach(async () => {
 function card(overrides: Partial<CardRecord> = {}): CardRecord {
   return {
     id: crypto.randomUUID(),
-    last4: '2836',
+    last4: '1111',
     nickname: 'Regalia',
     createdAt: '2025-11-01T00:00:00.000Z',
     ...overrides,
@@ -81,9 +83,94 @@ describe('openKardabraDb', () => {
       'by-card-period',
     ]);
     expect([...tx.objectStore('transactions').indexNames].sort()).toEqual(
-      ['by-card-date', 'by-statement'].sort(),
+      ['by-card-date', 'by-id', 'by-statement'].sort(),
     );
     await tx.done;
+    db.close();
+  });
+
+  // A v1 user's data must survive the upgrade and gain exactly the ids and
+  // fingerprints a fresh import of the same statements would produce.
+  it('upgrades a v1 database in place, backfilling ids and fingerprints', async () => {
+    const v1 = await openDB('kardabra', 1, {
+      upgrade(raw) {
+        raw
+          .createObjectStore('cards', { keyPath: 'id' })
+          .createIndex('by-last4', 'last4');
+        raw
+          .createObjectStore('statements', { keyPath: 'id' })
+          .createIndex('by-card-period', ['cardId', 'period'], {
+            unique: true,
+          });
+        const t = raw.createObjectStore('transactions', {
+          autoIncrement: true,
+        });
+        t.createIndex('by-statement', 'statementId');
+        t.createIndex('by-card-date', ['cardId', 'dateISO']);
+        raw.createObjectStore('cycles', { keyPath: ['cardId', 'period'] });
+        raw.createObjectStore('settings', { keyPath: 'key' });
+      },
+    });
+    const legacyTxns = [
+      {
+        statementId: 's1',
+        cardId: 'c1',
+        dateISO: '2025-10-01',
+        payee: 'CAFE',
+        amount: -120,
+      },
+      {
+        statementId: 's1',
+        cardId: 'c1',
+        dateISO: '2025-10-01',
+        payee: 'CAFE',
+        amount: -120,
+      },
+      {
+        statementId: 's1',
+        cardId: 'c1',
+        dateISO: '2025-10-03',
+        payee: 'BOOKS',
+        amount: -450,
+      },
+    ];
+    await v1.put('cards', {
+      id: 'c1',
+      last4: '4321',
+      nickname: 'Old',
+      createdAt: '2025-10-05T00:00:00.000Z',
+    });
+    await v1.put('statements', {
+      id: 's1',
+      cardId: 'c1',
+      period: '2025-10',
+      fileName: 'x.csv',
+      txnCount: 3,
+      importedAt: '2025-10-05T00:00:00.000Z',
+    });
+    for (const t of legacyTxns) await v1.add('transactions', t);
+    v1.close();
+
+    const db = await openKardabraDb();
+    const txns = await getTransactionsForStatement(db, 's1');
+    expect(txns.map((t) => t.id)).toEqual(transactionIds('4321', legacyTxns));
+    expect(new Set(txns.map((t) => t.id)).size).toBe(3);
+    expect(txns).toMatchObject(legacyTxns);
+    const stmt = await db.get('statements', 's1');
+    expect(stmt?.fingerprint).toBe(statementFingerprint(legacyTxns));
+    expect(stmt?.fileName).toBe('x.csv');
+    expect((await getAllCards(db))[0].nickname).toBe('Old');
+    db.close();
+  });
+
+  it('steps aside when another tab upgrades, and says so', async () => {
+    let notified = false;
+    const db = await openKardabraDb({
+      onVersionChange: () => (notified = true),
+    });
+    const newer = await openDB('kardabra', 99); // would block forever if we held on
+    expect(notified).toBe(true);
+    newer.close();
     db.close();
   });
 });
@@ -91,24 +178,24 @@ describe('openKardabraDb', () => {
 describe('cards', () => {
   it('putCard + getAllCards + getCardByLast4 round-trip', async () => {
     const db = await openKardabraDb();
-    const regalia = card({ last4: '2836', nickname: 'Regalia' });
+    const regalia = card({ last4: '1111', nickname: 'Regalia' });
     const swiggy = card({
       id: crypto.randomUUID(),
-      last4: '7259',
+      last4: '2222',
       nickname: 'Swiggy',
     });
     await putCard(db, regalia);
     await putCard(db, swiggy);
 
     expect(await getAllCards(db)).toHaveLength(2);
-    expect(await getCardByLast4(db, '7259')).toEqual(swiggy);
+    expect(await getCardByLast4(db, '2222')).toEqual(swiggy);
     expect(await getCardByLast4(db, '0000')).toBeUndefined();
     db.close();
   });
 
   it('getCard finds by id, undefined for a missing id', async () => {
     const db = await openKardabraDb();
-    const regalia = card({ last4: '2836', nickname: 'Regalia' });
+    const regalia = card({ last4: '1111', nickname: 'Regalia' });
     await putCard(db, regalia);
 
     expect(await getCard(db, regalia.id)).toEqual(regalia);
@@ -123,6 +210,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
     const s = statement({ txnCount: 2 });
     const txns: TransactionRecord[] = [
       {
+        id: 'txn-1',
         statementId: s.id,
         cardId: s.cardId,
         dateISO: '2025-10-01',
@@ -130,6 +218,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
         amount: -100,
       },
       {
+        id: 'txn-2',
         statementId: s.id,
         cardId: s.cardId,
         dateISO: '2025-10-02',
@@ -149,6 +238,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
     const first = statement({ txnCount: 2 });
     await putStatementWithTransactions(db, first, [
       {
+        id: 'txn-3',
         statementId: first.id,
         cardId: first.cardId,
         dateISO: '2025-10-01',
@@ -156,6 +246,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
         amount: -100,
       },
       {
+        id: 'txn-4',
         statementId: first.id,
         cardId: first.cardId,
         dateISO: '2025-10-02',
@@ -175,6 +266,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
     });
     await putStatementWithTransactions(db, second, [
       {
+        id: 'txn-5',
         statementId: second.id,
         cardId: second.cardId,
         dateISO: '2025-10-01',
@@ -182,6 +274,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
         amount: -100,
       },
       {
+        id: 'txn-6',
         statementId: second.id,
         cardId: second.cardId,
         dateISO: '2025-10-02',
@@ -189,6 +282,7 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
         amount: -200,
       },
       {
+        id: 'txn-7',
         statementId: second.id,
         cardId: second.cardId,
         dateISO: '2025-10-03',
@@ -272,6 +366,7 @@ describe('getTransactionsForCard', () => {
     });
     await putStatementWithTransactions(db, s1, [
       {
+        id: 'txn-8',
         statementId: s1.id,
         cardId: 'card-1',
         dateISO: '2025-09-05',
@@ -281,6 +376,7 @@ describe('getTransactionsForCard', () => {
     ]);
     await putStatementWithTransactions(db, s2, [
       {
+        id: 'txn-9',
         statementId: s2.id,
         cardId: 'card-1',
         dateISO: '2025-10-05',
@@ -290,6 +386,7 @@ describe('getTransactionsForCard', () => {
     ]);
     await putStatementWithTransactions(db, otherCardStatement, [
       {
+        id: 'txn-10',
         statementId: otherCardStatement.id,
         cardId: 'card-2',
         dateISO: '2025-10-05',
@@ -449,13 +546,14 @@ describe('recomputeCardSpends / setPaymentOverride — override round-trip', () 
     const cardId = 'card-1';
     await putCard(db, {
       id: cardId,
-      last4: '2836',
+      last4: '1111',
       nickname: 'Regalia',
       createdAt: '2025-11-01T00:00:00.000Z',
     });
     const s = statement({ cardId, period: '2025-10', txnCount: 4 });
     await putStatementWithTransactions(db, s, [
       {
+        id: 'txn-11',
         statementId: s.id,
         cardId,
         dateISO: '2025-10-01',
@@ -463,6 +561,7 @@ describe('recomputeCardSpends / setPaymentOverride — override round-trip', () 
         amount: -1000,
       },
       {
+        id: 'txn-12',
         statementId: s.id,
         cardId,
         dateISO: '2025-10-02',
@@ -470,6 +569,7 @@ describe('recomputeCardSpends / setPaymentOverride — override round-trip', () 
         amount: -500,
       },
       {
+        id: 'txn-13',
         statementId: s.id,
         cardId,
         dateISO: '2025-10-03',
@@ -477,6 +577,7 @@ describe('recomputeCardSpends / setPaymentOverride — override round-trip', () 
         amount: 5000,
       },
       {
+        id: 'txn-14',
         statementId: s.id,
         cardId,
         dateISO: '2025-10-04',
@@ -592,6 +693,7 @@ describe('deleteCardCascade', () => {
       });
       await putStatementWithTransactions(db, s, [
         {
+          id: 'txn-15',
           statementId: s.id,
           cardId: c.id,
           dateISO: '2025-10-01',

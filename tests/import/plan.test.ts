@@ -25,8 +25,10 @@ function parsed(over: Partial<ParsedStatement>): ParsedStatement {
   return {
     fileName: over.fileName ?? 'stmt.csv',
     last4: 'last4' in over ? (over.last4 as string | null) : null,
+    currency: over.currency ?? 'INR',
     summary: over.summary ?? {},
     transactions: over.transactions ?? [],
+    warnings: over.warnings ?? [],
   };
 }
 

@@ -103,18 +103,27 @@ function scoreByWideRowCount(rows: string[][]): number {
  * Parse text of unknown delimiter into rows: try each candidate delimiter
  * with the quote-aware reader above, and keep whichever produced the most
  * multi-column rows. Ties keep the earliest candidate in
- * CANDIDATE_DELIMITERS.
+ * CANDIDATE_DELIMITERS. Returns the winning delimiter too, so a writer (the
+ * anonymizer) can reproduce the file's own format.
  */
-export function parseDelimited(text: string): string[][] {
-  let best: string[][] = [];
+export function detectDelimited(text: string): {
+  delimiter: string;
+  rows: string[][];
+} {
+  let best = { delimiter: CANDIDATE_DELIMITERS[0], rows: [] as string[][] };
   let bestScore = -1;
   for (const delimiter of CANDIDATE_DELIMITERS) {
     const rows = parseWithDelimiter(text, delimiter);
     const score = scoreByWideRowCount(rows);
     if (score > bestScore) {
-      best = rows;
+      best = { delimiter, rows };
       bestScore = score;
     }
   }
   return best;
+}
+
+/** Rows of a delimited document whose delimiter is unknown. */
+export function parseDelimited(text: string): string[][] {
+  return detectDelimited(text).rows;
 }

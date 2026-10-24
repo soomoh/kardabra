@@ -99,7 +99,7 @@ describe('unpaidSummary counts only actionable cycles', () => {
   // three overlapping ones.
   const card: CardRecord = {
     id: 'card-1',
-    last4: '2836',
+    last4: '1111',
     nickname: 'Regalia',
     createdAt: '2025-11-01T00:00:00.000Z',
   };

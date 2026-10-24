@@ -19,11 +19,14 @@ Each fixture targets specific parser behavior:
 | `serial_dates.xlsx`        | Excel (ZIP)        | dates stored as Excel serial numbers rather than text                                                                                                                 |
 | `windows1252.csv`          | CSV (Windows-1252) | non-UTF-8 encoding recovery via fallback                                                                                                                              |
 | `utf16.csv`                | CSV (UTF-16 LE)    | UTF-16 detected and decoded via its byte-order mark                                                                                                                   |
+| `pdf_statement.pdf`        | PDF                | text-layer extraction (anonymizer today, PDF import later); generated from `pdf_statement.ps`                                                                         |
+| `pdf_statement_locked.pdf` | PDF (RC4-128)      | password handling — fabricated password `JANE2010`                                                                                                                    |
 
 ## Regenerating the Excel fixtures
 
 The binary Excel and non-UTF-8 CSV files are generated; the plain CSVs are
-hand-written. To rebuild the generated files after changing their layout:
+hand-written. The PDFs are generated from `pdf_statement.ps` with
+`tests/fixtures/generate-pdf.sh` (needs Ghostscript). To rebuild the generated files after changing their layout:
 
 ```
 node tests/fixtures/generate.mjs

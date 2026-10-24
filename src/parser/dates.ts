@@ -43,14 +43,23 @@ function expandTwoDigitYear(twoDigits: number): number {
   return twoDigits <= 68 ? 2000 + twoDigits : 1900 + twoDigits;
 }
 
+/** Whether a file writes numeric dates day-first (India: 05/11/2025 is 5
+ * November) or month-first (US). Decided once per file — see locale.ts. */
+export type DateOrder = 'dmy' | 'mdy';
+
+/** What each capture group of a format's regex holds, in order:
+ *   'first' / 'second' — the two leading numeric fields of a numeric date,
+ *       whose meaning (day vs month) is the FILE's DateOrder, not the
+ *       format's. Field order is data, not a new branch per ordering.
+ *   'day' / 'month'    — a numeric field with a fixed meaning (ISO).
+ *   'monthName'        — "Nov" / "November".
+ *   'year' / 'year2'   — four- / two-digit year. */
+type DateField =
+  'first' | 'second' | 'day' | 'month' | 'monthName' | 'year' | 'year2';
+
 interface DateFormatEntry {
   regex: RegExp;
-  // Returns null (not a throw) when the regex matched shape-wise but the
-  // month name inside didn't resolve — lets the caller fall through to
-  // try the next format instead of aborting the whole search.
-  extract: (
-    match: RegExpMatchArray,
-  ) => { year: number; month: number; day: number } | null;
+  fields: DateField[]; // one per capture group, in order
 }
 
 /** Build a real calendar date's ISO string, or null if year/month/day
@@ -97,87 +106,146 @@ const DATE_FORMATS: DateFormatEntry[] = [
   // HDFC            "20/09/2025"
   {
     regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
-    extract: (m) => ({
-      day: Number(m[1]),
-      month: Number(m[2]),
-      year: Number(m[3]),
-    }),
+    fields: ['first', 'second', 'year'],
   },
   // Axis            "06 Nov '25"
   {
-    regex: /^(\d{1,2}) ([A-Za-z]{3}) '(\d{2})$/,
-    extract: (m) => {
-      const month = monthFromAbbreviation(m[2]);
-      return month === null
-        ? null
-        : { day: Number(m[1]), month, year: expandTwoDigitYear(Number(m[3])) };
-    },
+    regex: /^(\d{1,2}) ([A-Za-z]{3,9}) '(\d{2})$/,
+    fields: ['day', 'monthName', 'year2'],
   },
   // ICICI, savings  "03-11-2025"
   {
     regex: /^(\d{1,2})-(\d{1,2})-(\d{4})$/,
-    extract: (m) => ({
-      day: Number(m[1]),
-      month: Number(m[2]),
-      year: Number(m[3]),
-    }),
+    fields: ['first', 'second', 'year'],
   },
   // "03-Nov-2025"
   {
-    regex: /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/,
-    extract: (m) => {
-      const month = monthFromAbbreviation(m[2]);
-      return month === null
-        ? null
-        : { day: Number(m[1]), month, year: Number(m[3]) };
-    },
+    regex: /^(\d{1,2})-([A-Za-z]{3,9})-(\d{4})$/,
+    fields: ['day', 'monthName', 'year'],
   },
   // short year      "20/09/25"
   {
     regex: /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/,
-    extract: (m) => ({
-      day: Number(m[1]),
-      month: Number(m[2]),
-      year: expandTwoDigitYear(Number(m[3])),
-    }),
+    fields: ['first', 'second', 'year2'],
   },
   // "03-Nov-25"
   {
-    regex: /^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/,
-    extract: (m) => {
-      const month = monthFromAbbreviation(m[2]);
-      return month === null
-        ? null
-        : { day: Number(m[1]), month, year: expandTwoDigitYear(Number(m[3])) };
-    },
+    regex: /^(\d{1,2})-([A-Za-z]{3,9})-(\d{2})$/,
+    fields: ['day', 'monthName', 'year2'],
+  },
+  // short year      "05-11-25"
+  {
+    regex: /^(\d{1,2})-(\d{1,2})-(\d{2})$/,
+    fields: ['first', 'second', 'year2'],
   },
   // ISO             "2025-09-20"
   {
     regex: /^(\d{4})-(\d{1,2})-(\d{1,2})$/,
-    extract: (m) => ({
-      year: Number(m[1]),
-      month: Number(m[2]),
-      day: Number(m[3]),
-    }),
+    fields: ['year', 'month', 'day'],
+  },
+  // "05 Nov 2025", "5 Nov, 2025"
+  {
+    regex: /^(\d{1,2}) ([A-Za-z]{3,9}),? (\d{4})$/,
+    fields: ['day', 'monthName', 'year'],
+  },
+  // SBI PDF        "16 Jun 26"
+  {
+    regex: /^(\d{1,2}) ([A-Za-z]{3,9}),? (\d{2})$/,
+    fields: ['day', 'monthName', 'year2'],
+  },
+  // "Nov 05, 2025"
+  {
+    regex: /^([A-Za-z]{3,9}) (\d{1,2}),? (\d{4})$/,
+    fields: ['monthName', 'day', 'year'],
+  },
+  // "06/Nov/2025"
+  {
+    regex: /^(\d{1,2})\/([A-Za-z]{3,9})\/(\d{4})$/,
+    fields: ['day', 'monthName', 'year'],
   },
 ];
+
+/** Resolve one regex match into calendar parts under `order`. null when a
+ * month name inside didn't resolve (caller tries the next format). */
+function partsFromMatch(
+  match: RegExpMatchArray,
+  fields: DateField[],
+  order: DateOrder,
+): { year: number; month: number; day: number } | null {
+  let year = 0;
+  let month = 0;
+  let day = 0;
+  for (const [i, field] of fields.entries()) {
+    const text = match[i + 1];
+    switch (field) {
+      case 'first':
+        if (order === 'dmy') day = Number(text);
+        else month = Number(text);
+        break;
+      case 'second':
+        if (order === 'dmy') month = Number(text);
+        else day = Number(text);
+        break;
+      case 'day':
+        day = Number(text);
+        break;
+      case 'month':
+        month = Number(text);
+        break;
+      case 'monthName': {
+        const named = monthFromAbbreviation(text);
+        if (named === null) return null;
+        month = named;
+        break;
+      }
+      case 'year':
+        year = Number(text);
+        break;
+      case 'year2':
+        year = expandTwoDigitYear(Number(text));
+        break;
+    }
+  }
+  return { year, month, day };
+}
+
+// "13/11/2025": numeric date whose two leading fields are order-dependent.
+const NUMERIC_FIRST_SECOND = /^(\d{1,2})[/-](\d{1,2})[/-]\d{2}(?:\d{2})?$/;
+
+/** Infer a file's numeric date order from its date cells: any first
+ * component above 12 can only be a day (day-first); otherwise any second
+ * component above 12 can only be a day (month-first); otherwise the Indian
+ * default, day-first. */
+export function inferDateOrder(values: unknown[]): DateOrder {
+  let secondAbove12 = false;
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const match = cleanText(value).split(' ')[0].match(NUMERIC_FIRST_SECOND);
+    if (match === null) continue;
+    if (Number(match[1]) > 12) return 'dmy';
+    if (Number(match[2]) > 12) secondAbove12 = true;
+  }
+  return secondAbove12 ? 'mdy' : 'dmy';
+}
 
 /**
  * Parse a statement's date cell into 'YYYY-MM-DD'.
  *
+ * `order` says how numeric dates read (day-first by default — India).
  * Tries the whole cleaned string first (Axis dates contain spaces:
  * "06 Nov '25"), then just the first token (HDFC appends a time:
  * "20/09/2025 17:06:00"). Throws StatementError(kind: 'unrecognised-date')
  * if nothing in DATE_FORMATS matches either candidate.
  */
-export function parseDate(value: unknown): string {
+export function parseDate(value: unknown, order: DateOrder = 'dmy'): string {
   // A spreadsheet date cell read raw is a number, not a string — handle it
   // before the text formats below.
   if (typeof value === 'number') {
     const iso = isoFromExcelSerial(value);
     if (iso !== null) return iso;
   }
-  const s = cleanText(value);
+  // HDFC's PDFs glue a bar onto the date: "14/01/2026| 17:06".
+  const s = cleanText(value).replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
   if (!s) {
     throw new StatementError(
       'unrecognised-date',
@@ -193,7 +261,7 @@ export function parseDate(value: unknown): string {
     for (const format of DATE_FORMATS) {
       const match = candidate.match(format.regex);
       if (!match) continue;
-      const parts = format.extract(match);
+      const parts = partsFromMatch(match, format.fields, order);
       if (parts === null) continue;
       const iso = isoDateOrNull(parts.year, parts.month, parts.day);
       if (iso !== null) return iso;

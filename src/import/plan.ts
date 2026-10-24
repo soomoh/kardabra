@@ -34,6 +34,7 @@ import type { IDBPDatabase } from 'idb';
 import type {
   ParsedStatement,
   StatementErrorKind,
+  StatementSummary,
   Transaction,
 } from '../parser';
 import { StatementError } from '../parser';
@@ -50,8 +51,9 @@ import {
   upsertCycle,
   recomputeCardSpends,
 } from '../db/db';
-import { nextDueDateWithGraceISO } from '../lib/dates';
+import { isValidDueDay, nextDueDateWithGraceISO } from '../lib/dates';
 import { netSpend, identifyPaymentIndices } from '../lib/spend';
+import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
 
 /** One file's parse outcome, as the caller (which actually calls
  * `parseStatementBytes` inside a try/catch) hands it to `planImport`.
@@ -89,6 +91,15 @@ export type FileOutcome =
       existingTxnCount: number;
       newTxnCount: number;
       supersedes: boolean;
+      /** The same file as the stored one (identical transactions): its cycle
+       * is re-derived so improved derivation logic heals old data. A
+       * different, thinner file never touches the stored month. */
+      refreshes: boolean;
+      /** The stored statement this one would replace — its summary fields
+       * fill any the new file lacks, so a supersede never loses a total. */
+      previous?: StatementRecord;
+      /** Lost to a fuller file for the same card and month in this batch. */
+      inBatch?: boolean;
     }
   | {
       kind: 'rejected';
@@ -162,10 +173,26 @@ function periodOf(parsed: ParsedStatement): string | null {
  * another, so each becomes its own 'new' CardRef.
  */
 function resolveCardRef(
-  last4: string | null,
+  parsed: ParsedStatement,
+  period: string,
   existingCards: CardRecord[],
+  existingStatements: StatementRecord[],
   newCardsByLast4: Map<string, CardRef>,
 ): CardRef {
+  const { last4 } = parsed;
+  // The same file imported again belongs to the card it went to last time —
+  // the only way to recognise a statement whose card number is unreadable.
+  if (parsed.transactions.length > 0) {
+    const fingerprint = statementFingerprint(parsed.transactions);
+    const same = existingStatements.find(
+      (s) => s.period === period && s.fingerprint === fingerprint,
+    );
+    const card = same && existingCards.find((c) => c.id === same.cardId);
+    if (card !== undefined) {
+      return { kind: 'existing', cardId: card.id, nickname: card.nickname };
+    }
+  }
+
   if (last4 === null) {
     return { kind: 'new', last4: null, suggestedNickname: 'New card' };
   }
@@ -223,7 +250,13 @@ function planOneFile(
     };
   }
 
-  const cardRef = resolveCardRef(parsed.last4, existingCards, newCardsByLast4);
+  const cardRef = resolveCardRef(
+    parsed,
+    period,
+    existingCards,
+    existingStatements,
+    newCardsByLast4,
+  );
 
   // A brand-new card can't already have a statement for this period —
   // duplicate detection only makes sense against a card that already
@@ -248,6 +281,10 @@ function planOneFile(
       // Keep-fullest: a re-import only replaces the stored statement when
       // it recovered strictly more transactions than what's already there.
       supersedes: newTxnCount > existingStatement.txnCount,
+      refreshes:
+        existingStatement.fingerprint ===
+        statementFingerprint(parsed.transactions),
+      previous: existingStatement,
     };
   }
 
@@ -293,7 +330,59 @@ export function planImport(
     );
   }
 
-  return outcomes;
+  return keepFullestInBatch(outcomes);
+}
+
+/** Two files in one batch for the same card and month: only the one with
+ * the most transactions is written (keep-fullest, ties to the first); the
+ * rest become non-writing duplicates. Without this both would be written and
+ * the later one would win regardless of which was more complete. */
+function keepFullestInBatch(outcomes: FileOutcome[]): FileOutcome[] {
+  const winners = new Map<string, number>(); // group key -> outcome index
+  const groupKey = (o: FileOutcome): string | null => {
+    if (o.kind === 'new-statement') {
+      return `${cardInputKey(o.cardRef, o.parsed.fileName)}|${o.period}`;
+    }
+    // A refresh re-derives the stored month, so it competes too: alongside
+    // a fuller superseding file it must lose, or it would re-apply the old
+    // file's totals after the new one was written.
+    if (o.kind === 'duplicate' && (o.supersedes || o.refreshes)) {
+      return `${cardInputKey(o.cardRef, o.fileName)}|${o.period}`;
+    }
+    return null;
+  };
+  const count = (o: FileOutcome): number =>
+    o.kind === 'new-statement' || o.kind === 'duplicate'
+      ? o.parsed.transactions.length
+      : 0;
+
+  outcomes.forEach((o, i) => {
+    const key = groupKey(o);
+    if (key === null) return;
+    const best = winners.get(key);
+    if (best === undefined || count(o) > count(outcomes[best])) {
+      winners.set(key, i);
+    }
+  });
+
+  return outcomes.map((o, i) => {
+    const key = groupKey(o);
+    if (key === null || winners.get(key) === i) return o;
+    if (o.kind !== 'new-statement' && o.kind !== 'duplicate') return o;
+    const kept = outcomes[winners.get(key)!];
+    return {
+      kind: 'duplicate',
+      fileName: o.parsed.fileName,
+      parsed: o.parsed,
+      period: o.period,
+      cardRef: o.cardRef,
+      existingTxnCount: count(kept),
+      newTxnCount: count(o),
+      supersedes: false,
+      refreshes: false,
+      inBatch: true,
+    };
+  });
 }
 
 export interface CommitResult {
@@ -311,42 +400,75 @@ export interface CommitUserInput {
   dueDays: Map<string, number>;
 }
 
+/** Drop keys whose value is undefined, so optional record fields are
+ * genuinely absent rather than present-and-undefined. */
+function defined<T extends object>(record: T): T {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, v]) => v !== undefined),
+  ) as T;
+}
+
+/** The new file's summary, with any field it lacks taken from the statement
+ * it replaces — a supersede adds transactions, it never loses a total. */
+function mergedSummary(
+  summary: StatementSummary,
+  previous: StatementRecord | undefined,
+): StatementSummary {
+  if (previous === undefined) return summary;
+  return defined({
+    statementDateISO: summary.statementDateISO ?? previous.statementDateISO,
+    paymentDueDateISO: summary.paymentDueDateISO ?? previous.dueDateISO,
+    totalDue: summary.totalDue ?? previous.totalDue,
+    minDue: summary.minDue ?? previous.minDue,
+    creditLimit: summary.creditLimit ?? previous.creditLimit,
+    creditBalance: summary.creditBalance ?? previous.creditBalance,
+    openingBalance: summary.openingBalance ?? previous.openingBalance,
+    paymentsTotal: summary.paymentsTotal ?? previous.paymentsTotal,
+    purchasesTotal: summary.purchasesTotal ?? previous.purchasesTotal,
+    chargesTotal: summary.chargesTotal ?? previous.chargesTotal,
+  });
+}
+
 function toStatementRecord(
   id: string,
   cardId: string,
   period: string,
   parsed: ParsedStatement,
+  summary: StatementSummary,
 ): StatementRecord {
-  const { summary } = parsed;
-  return {
+  return defined({
     id,
     cardId,
     period,
-    ...(summary.statementDateISO !== undefined
-      ? { statementDateISO: summary.statementDateISO }
-      : {}),
-    ...(summary.paymentDueDateISO !== undefined
-      ? { dueDateISO: summary.paymentDueDateISO }
-      : {}),
-    ...(summary.totalDue !== undefined ? { totalDue: summary.totalDue } : {}),
-    ...(summary.minDue !== undefined ? { minDue: summary.minDue } : {}),
-    ...(summary.creditLimit !== undefined
-      ? { creditLimit: summary.creditLimit }
-      : {}),
+    statementDateISO: summary.statementDateISO,
+    dueDateISO: summary.paymentDueDateISO,
+    totalDue: summary.totalDue,
+    minDue: summary.minDue,
+    creditLimit: summary.creditLimit,
+    creditBalance: summary.creditBalance,
+    openingBalance: summary.openingBalance,
+    paymentsTotal: summary.paymentsTotal,
+    purchasesTotal: summary.purchasesTotal,
+    chargesTotal: summary.chargesTotal,
+    currency: parsed.currency,
+    skippedRows: parsed.warnings.length,
+    fingerprint: statementFingerprint(parsed.transactions),
     fileName: parsed.fileName,
     txnCount: parsed.transactions.length,
     importedAt: new Date().toISOString(),
-  };
+  });
 }
 
 function toTransactionRecords(
   statementId: string,
-  cardId: string,
+  card: { id: string; last4: string | null },
   parsed: ParsedStatement,
 ): TransactionRecord[] {
-  return parsed.transactions.map((txn) => ({
+  const ids = transactionIds(cardIdKey(card), parsed.transactions);
+  return parsed.transactions.map((txn, i) => ({
+    id: ids[i],
     statementId,
-    cardId,
+    cardId: card.id,
     dateISO: txn.dateISO,
     payee: txn.payee,
     amount: txn.amount,
@@ -374,10 +496,7 @@ export async function commitImport(
   // Two outcomes can share one 'new' CardRef object (planImport's batch
   // dedupe) — this remembers "already created in this commit" so the
   // second outcome reuses the id instead of creating a second card row.
-  const createdCards = new Map<
-    string,
-    { cardId: string; dueDay: number | undefined }
-  >();
+  const createdCards = new Map<string, CardRecord>();
 
   // Every card touched by this commit (new statement or refreshed
   // duplicate) needs its spends recomputed once, after every write in the
@@ -388,10 +507,21 @@ export async function commitImport(
   // batch touch the same card (e.g. three months' history for one card).
   const affectedCardIds = new Set<string>();
 
+  function dueDayFor(key: string): number | undefined {
+    const day = userInput.dueDays.get(key);
+    if (day !== undefined && !isValidDueDay(day)) {
+      // The import UI validates before enabling Import; getting here means
+      // it didn't — a programmer mistake, so it throws.
+      throw new Error(`commitImport: invalid due day ${day} (key "${key}")`);
+    }
+    return day;
+  }
+
   async function resolveCard(
     cardRef: CardRef,
     fileName: string,
-  ): Promise<{ cardId: string; dueDay: number | undefined }> {
+    currency: string,
+  ): Promise<CardRecord> {
     if (cardRef.kind === 'existing') {
       const record = await db.get('cards', cardRef.cardId);
       if (record === undefined) {
@@ -403,7 +533,16 @@ export async function commitImport(
           `commitImport: existing card ${cardRef.cardId} not found`,
         );
       }
-      return { cardId: record.id, dueDay: record.dueDay };
+      // An existing card that never had a due day: the plan asked for one
+      // (needsDueDay), so keep the answer — otherwise it is asked again on
+      // every import and never used.
+      const answered = dueDayFor(record.id);
+      if (record.dueDay === undefined && answered !== undefined) {
+        const updated = { ...record, dueDay: answered };
+        await putCard(db, updated);
+        return updated;
+      }
+      return record;
     }
 
     const key = cardInputKey(cardRef, fileName);
@@ -421,42 +560,41 @@ export async function commitImport(
       );
     }
 
-    const dueDay = userInput.dueDays.get(key);
-    const card: CardRecord = {
+    const card: CardRecord = defined({
       id: crypto.randomUUID(),
       last4: cardRef.last4,
       nickname,
-      ...(dueDay !== undefined ? { dueDay } : {}),
+      dueDay: dueDayFor(key),
+      currency,
       createdAt: new Date().toISOString(),
-    };
+    });
     await putCard(db, card);
     result.cardsCreated++;
-
-    const created = { cardId: card.id, dueDay };
-    createdCards.set(key, created);
-    return created;
+    createdCards.set(key, card);
+    return card;
   }
 
   for (const outcome of outcomes) {
     if (outcome.kind === 'rejected' || outcome.kind === 'failed') continue;
 
     if (outcome.kind === 'duplicate' && !outcome.supersedes) {
-      // The statement and its transactions stay as they are — but the
-      // cycle's *derived* fields (due date, totals, spend) are recomputed
-      // and upserted anyway. This is the refresh path: when the
-      // derivation logic improves (e.g. the due-date grace gap), the user
-      // re-drags the same files and stale cycles heal, without re-writing
-      // transaction data or losing paidAt (upsertCycle preserves it).
-      const { cardId, dueDay } = await resolveCard(
+      result.duplicatesSkipped++;
+      // Refresh path: the *same* file re-dropped re-derives its cycle (due
+      // date, totals) so improved derivation logic heals old data, without
+      // rewriting transactions or losing paidAt (upsertCycle keeps it). A
+      // different, thinner file must not overwrite the stored month.
+      if (!outcome.refreshes) continue;
+      const card = await resolveCard(
         outcome.cardRef,
         outcome.fileName,
+        outcome.parsed.currency,
       );
+      const summary = mergedSummary(outcome.parsed.summary, outcome.previous);
       await upsertCycle(
         db,
-        buildCycleRecord(cardId, outcome.period, outcome.parsed, dueDay),
+        buildCycleRecord(card, outcome.period, outcome.parsed, summary),
       );
-      affectedCardIds.add(cardId);
-      result.duplicatesSkipped++;
+      affectedCardIds.add(card.id);
       continue;
     }
     if (outcome.kind === 'duplicate') {
@@ -467,16 +605,26 @@ export async function commitImport(
     }
 
     const { parsed, period, cardRef } = outcome;
-    const { cardId, dueDay } = await resolveCard(cardRef, parsed.fileName);
+    const card = await resolveCard(cardRef, parsed.fileName, parsed.currency);
+    const summary = mergedSummary(
+      parsed.summary,
+      outcome.kind === 'duplicate' ? outcome.previous : undefined,
+    );
 
     const statementId = crypto.randomUUID();
-    const statement = toStatementRecord(statementId, cardId, period, parsed);
-    const txnRecords = toTransactionRecords(statementId, cardId, parsed);
+    const statement = toStatementRecord(
+      statementId,
+      card.id,
+      period,
+      parsed,
+      summary,
+    );
+    const txnRecords = toTransactionRecords(statementId, card, parsed);
     await putStatementWithTransactions(db, statement, txnRecords);
     result.statementsWritten++;
 
-    await upsertCycle(db, buildCycleRecord(cardId, period, parsed, dueDay));
-    affectedCardIds.add(cardId);
+    await upsertCycle(db, buildCycleRecord(card, period, parsed, summary));
+    affectedCardIds.add(card.id);
   }
 
   // The authoritative spend pass: buildCycleRecord above only ever
@@ -499,23 +647,24 @@ export async function commitImport(
  * place, shared by the new-statement and duplicate-refresh paths so the
  * two can never compute them differently. */
 function buildCycleRecord(
-  cardId: string,
+  card: CardRecord,
   period: string,
   parsed: ParsedStatement,
-  dueDay: number | undefined,
+  summary: StatementSummary,
 ): CycleRecord {
+  const cardId = card.id;
+  const { dueDay } = card;
   // The user-set `dueDay` wins: project the due date from it relative to this
   // statement's dateline (with a minimum grace gap — see nextDueDateWithGraceISO
   // for the mis-projection it prevents). Only when no due day is known does the
   // statement's own parsed due date stand in; with neither, the due date stays
   // the null sentinel (unknown) rather than failing the commit.
   const anchorDateISO =
-    parsed.summary.statementDateISO ??
-    maxTransactionDateISO(parsed.transactions);
+    summary.statementDateISO ?? maxTransactionDateISO(parsed.transactions);
   const dueDateISO =
     dueDay !== undefined && anchorDateISO !== null
       ? nextDueDateWithGraceISO(anchorDateISO, dueDay)
-      : (parsed.summary.paymentDueDateISO ?? null);
+      : (summary.paymentDueDateISO ?? null);
 
   // Spend = debits minus cashback/refund-style credits, with the
   // identified bill-payment SET excluded (see lib/spend.ts for the
@@ -539,17 +688,13 @@ function buildCycleRecord(
     }),
   );
 
-  return {
+  return defined({
     cardId,
     period,
     dueDateISO,
-    source: 'statement',
+    source: 'statement' as const,
     spend,
-    ...(parsed.summary.totalDue !== undefined
-      ? { totalDue: parsed.summary.totalDue }
-      : {}),
-    ...(parsed.summary.minDue !== undefined
-      ? { minDue: parsed.summary.minDue }
-      : {}),
-  };
+    totalDue: summary.totalDue,
+    minDue: summary.minDue,
+  });
 }

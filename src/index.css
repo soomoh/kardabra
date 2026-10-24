@@ -486,3 +486,33 @@ button.danger {
 .trends-tooltip strong {
   font-weight: 600;
 }
+
+/* Phase 1 states: database status, error banner, totals warning. Styled
+   properly in the Phase 3 visual pass. */
+.db-status {
+  padding: 2rem 0;
+}
+.error-banner {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--amount-debit);
+  border-radius: 8px;
+}
+.error-banner p,
+.totals-warning p {
+  margin: 0;
+}
+.totals-warning {
+  flex-basis: 100%;
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--tone-soon);
+  background: var(--bg-subtle);
+}
+.muted {
+  color: var(--muted-color);
+}
