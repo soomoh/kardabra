@@ -45,6 +45,7 @@ npm test            # run the test suite (Vitest)
 npm run lint        # ESLint
 npm run format      # Prettier (write) — format:check to verify
 npm run build       # type-check and produce a production build
+npm run test:e2e    # browser smoke test (Playwright; first run: npx playwright install chromium)
 ```
 
 Tests live in `tests/`, mirroring `src/`. Statement fixtures under

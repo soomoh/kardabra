@@ -41,3 +41,7 @@ debug/
 *.ofx
 *.qif
 !tests/fixtures/**
+
+# Playwright output
+test-results/
+playwright-report/
