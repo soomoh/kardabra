@@ -1,17 +1,7 @@
 /**
- * Opens Kardabra's IndexedDB database and exposes small, focused
- * data-access functions over it. No generic "repository" abstraction on
- * top (YAGNI): each function does exactly one query or one write, named
- * for what it does, so a caller (the import pipeline, later the UI) never
- * has to guess what a call will touch.
- *
- * Why `idb` (a ~1KB dependency) instead of the raw IndexedDB API: raw
- * IndexedDB is a callback/event API designed in 2010, before Promises
- * existed in the language — every read or write means wiring up
- * `onsuccess`/`onerror` handlers by hand. `idb` wraps each of those in a
- * Promise so the calls below can use plain `await`, without hiding any of
- * the underlying concepts — object stores, transactions, and indexes are
- * still exactly what you see in every function here, just awaitable.
+ * Kardabra's IndexedDB: opening and upgrading it, and one small function per
+ * query or write, named for what it touches. `idb` only makes the requests
+ * awaitable; stores, indexes and transactions are used directly.
  */
 
 import { openDB, type IDBPDatabase } from 'idb';
@@ -20,6 +10,7 @@ import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
 import {
   identifyPaymentIndices,
   netSpend,
+  expectedDue,
   type PaymentMark,
 } from '../lib/spend';
 import type {
@@ -129,24 +120,11 @@ export async function getAllCards(
   return db.getAll('cards');
 }
 
-/** One card by id, or `undefined` if it doesn't exist — the lookup
- * CardDetail needs that neither `getAllCards` nor `getCardByLast4` (keyed
- * on the wrong field) already cover. */
 export async function getCard(
   db: IDBPDatabase<KardabraSchema>,
   id: string,
 ): Promise<CardRecord | undefined> {
   return db.get('cards', id);
-}
-
-/** `last4` is always a real 4-digit string here, never null — a card with
- * no last4 can't be looked up this way (see plan.ts: such cards are never
- * matched against existing ones, only ever created new). */
-export async function getCardByLast4(
-  db: IDBPDatabase<KardabraSchema>,
-  last4: string,
-): Promise<CardRecord | undefined> {
-  return db.getFromIndex('cards', 'by-last4', last4);
 }
 
 export async function putCard(
@@ -164,19 +142,15 @@ export async function getStatement(
   return db.getFromIndex('statements', 'by-card-period', [cardId, period]);
 }
 
-/** Every statement ever imported, across every card — the snapshot
- * `planImport` needs to detect duplicates against (see plan.ts). */
+/** Every statement on every card — planImport's duplicate snapshot. */
 export async function getAllStatements(
   db: IDBPDatabase<KardabraSchema>,
 ): Promise<StatementRecord[]> {
   return db.getAll('statements');
 }
 
-/** All statements for one card, newest-first by period. No dedicated
- * index for "by card alone" (YAGNI — same reasoning as
- * `getLatestCycleByCard`): `by-card-period`'s compound key isn't worth a
- * range-query trick for what's still a small per-card list, so this is a
- * full scan filtered by cardId. */
+/** One card's statements, newest first. A filtered scan: per-card lists are
+ * small, so no extra index. */
 export async function getStatementsForCard(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
@@ -187,20 +161,9 @@ export async function getStatementsForCard(
     .sort((a, b) => b.period.localeCompare(a.period));
 }
 
-/**
- * Write a statement and its transactions as one atomic unit, replacing
- * whatever previously existed for the same (cardId, period).
- *
- * This is the "keep fullest" rule: when a statement for a period is
- * imported twice (e.g. the user re-downloads because the first export was
- * incomplete), the newer parse simply replaces the older one outright —
- * delete the old statement row and every transaction the by-statement
- * index says belongs to it, *then*
- * insert the new statement and its transactions — all inside one
- * IndexedDB transaction, so a failure partway through leaves either the
- * complete old state or the complete new state, never a mix with orphaned
- * transactions pointing at a deleted statement.
- */
+/** Write a statement and its transactions, replacing any statement for the
+ * same (card, period) and all of its transactions, in one IndexedDB
+ * transaction — a failure leaves the old state or the new, never orphans. */
 export async function putStatementWithTransactions(
   db: IDBPDatabase<KardabraSchema>,
   statement: StatementRecord,
@@ -228,20 +191,10 @@ export async function putStatementWithTransactions(
 }
 
 /**
- * Insert or update a cycle, preserving any existing `paidAt` and
- * `paymentOverride`.
- *
- * Re-importing a statement (a corrected download, a supersede) recomputes
- * everything the statement itself says — due date, totalDue, minDue — but
- * "has the user paid this bill" and "which rows did the user pick as the
- * payment" are facts that live outside the statement entirely. Overwriting
- * either on every import would silently un-pay a bill, or silently discard
- * a manual payment fix, just because its statement was re-imported;
- * carrying both existing values forward is what makes `upsertCycle` safe
- * to call on every commit, not just the first one. (The `spend` this
- * function writes is only the provisional first-pass value — see plan.ts's
- * buildCycleRecord; commitImport's later recomputeCardSpends pass is what
- * actually finalises it, using this row's preserved paymentOverride.)
+ * Insert or update a cycle, keeping its `paidAt` and `paymentOverride`.
+ * Those are the user's facts, not the statement's: a re-import must never
+ * un-pay a bill or drop a manual payment fix. The `spend` written here is
+ * provisional; commitImport's recomputeCardSpends pass finalises it.
  */
 export async function upsertCycle(
   db: IDBPDatabase<KardabraSchema>,
@@ -255,11 +208,7 @@ export async function upsertCycle(
   await db.put('cycles', merged);
 }
 
-/** All cycles for one card, in no particular order — the input
- * `recomputeCardSpends` re-sorts by period itself, and CardDetail only
- * needs to index this by period, not walk it in any order. No dedicated
- * index (YAGNI, same reasoning as `getActionableCycleByCard`): `cycles` is
- * small per card, so a full scan filtered by cardId is simplest. */
+/** One card's cycles, in no particular order. */
 export async function getCyclesForCard(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
@@ -268,10 +217,6 @@ export async function getCyclesForCard(
   return all.filter((cycle) => cycle.cardId === cardId);
 }
 
-/** Every cycle across every card — the flat input the trends chart needs
- * (lib/trends.ts's monthlyTrends reads cycle.spend directly now, rather
- * than recomputing from transactions), same "flat array, caller groups it"
- * shape as getAllStatements/getAllTransactions. */
 export async function getAllCycles(
   db: IDBPDatabase<KardabraSchema>,
 ): Promise<CycleRecord[]> {
@@ -279,25 +224,12 @@ export async function getAllCycles(
 }
 
 /**
- * Recompute and store `spend` for every one of a card's cycles, in
- * statement-period order — the authoritative pass that makes cycle.spend
- * correct regardless of what order statements were imported in, and the
- * ONLY place that ever writes `spend` after the initial (provisional)
- * write in plan.ts's buildCycleRecord.
+ * Recompute and store `spend` for each of a card's cycles — the only writer
+ * of the final value, so it is right whatever order statements arrived in.
  *
- * Walking oldest-to-newest matters: each statement's `priorExpectedDue`
- * (what identifyPaymentIndices needs for its amount-match rung) is the
- * PRECEDING statement's own totalDue, or — when the bank's export carries
- * no total — that preceding statement's freshly-recomputed spend. Going in
- * order guarantees the preceding cycle's spend is already correct and
- * up to date before it's used as this cycle's fallback; computing in
- * import order (or in parallel) could use a stale or not-yet-recomputed
- * prior spend instead.
- *
- * A statement with no matching cycle row is skipped (shouldn't normally
- * happen — commitImport always upserts a cycle alongside its statement —
- * but this function has no write of its own to make there, so skipping is
- * the correct no-op rather than fabricating a cycle here).
+ * Oldest first: a statement's priorExpectedDue (the amount-match rung) may be
+ * the previous statement's spend, so that spend must already be recomputed.
+ * A statement with no cycle row is skipped.
  */
 export async function recomputeCardSpends(
   db: IDBPDatabase<KardabraSchema>,
@@ -305,12 +237,12 @@ export async function recomputeCardSpends(
 ): Promise<void> {
   const statements = (await getStatementsForCard(db, cardId))
     .slice()
-    .sort((a, b) => a.period.localeCompare(b.period)); // ascending — see header comment
+    .sort((a, b) => a.period.localeCompare(b.period));
 
   let priorExpectedDue: number | null = null;
   for (const statement of statements) {
     const cycle = await db.get('cycles', [cardId, statement.period]);
-    if (cycle === undefined) continue; // no cycle row for this statement — nothing to update
+    if (cycle === undefined) continue;
 
     const txns = await getTransactionsForStatement(db, statement.id);
     const paymentIndices = identifyPaymentIndices(txns, {
@@ -320,22 +252,12 @@ export async function recomputeCardSpends(
     const spend = netSpend(txns, paymentIndices);
     await db.put('cycles', { ...cycle, spend });
 
-    // This statement's own totalDue wins as the next cycle's expected due
-    // when the bank supplied one; otherwise the spend just computed is the
-    // best available proxy for what was owed (same fallback as
-    // CardDetail's priorExpectedDue helper).
-    priorExpectedDue = statement.totalDue ?? spend;
+    priorExpectedDue = expectedDue(statement.totalDue, spend);
   }
 }
 
-/**
- * Set (or, passing `undefined`, clear back to auto-detect) a cycle's
- * payment override, then immediately recompute that card's spends so
- * `cycle.spend` reflects the change everywhere it's read from (single
- * source of truth — see schema.ts's CycleRecord.spend comment). A no-op
- * if the cycle doesn't exist yet (nothing to set an override on) — the
- * same "not an error, just nothing to do" shape as `setCyclePaid`.
- */
+/** Set a cycle's payment override (undefined returns it to auto-detection)
+ * and recompute the card's spends. No-op if the cycle doesn't exist. */
 export async function setPaymentOverride(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
@@ -356,17 +278,8 @@ export async function setPaymentOverride(
   await recomputeCardSpends(db, cardId);
 }
 
-/**
- * Mark (or un-mark, via `paidAt: null`) a cycle as paid. Does nothing if
- * the cycle doesn't exist yet — a guard clause, not an error: there's
- * nothing wrong with marking a not-yet-imported cycle paid from the UI
- * being asked to do something before its data exists, it's just a no-op.
- *
- * `paidAt: string | null` (not `string | undefined`) because this
- * function's whole job is to let the caller *clear* the field, and
- * `undefined` can't be distinguished from "argument omitted" the way
- * `null` can.
- */
+/** Mark a cycle paid, or unpaid with `null` (not undefined, which reads as
+ * an omitted argument). No-op if the cycle doesn't exist. */
 export async function setCyclePaid(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
@@ -378,12 +291,7 @@ export async function setCyclePaid(
   await db.put('cycles', { ...existing, paidAt: paidAt ?? undefined });
 }
 
-/** The card's one actionable cycle — its latest — or `null` if it has
- * none yet. "Latest wins" is a domain rule, not a display choice: see
- * lib/cycles.ts's header comment (a newer statement's total already
- * absorbs any unpaid carry-forward, so older cycles are settled by
- * successor). No dedicated index (YAGNI — `cycles` is small): a full
- * scan filtered by cardId, then the shared actionableCycle helper. */
+/** The card's actionable cycle (lib/cycles.ts), or null. */
 export async function getActionableCycleByCard(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
@@ -394,10 +302,7 @@ export async function getActionableCycleByCard(
   return actionableCycle(forCard);
 }
 
-/** Every transaction across every card — the flat input TrendsChart's
- * monthlyTrends transform groups by statement itself (see lib/trends.ts),
- * same "give the caller a flat array, let the pure function group it"
- * shape as getAllStatements feeds planImport. */
+/** Every transaction on every card (for the Phase 5 backup). */
 export async function getAllTransactions(
   db: IDBPDatabase<KardabraSchema>,
 ): Promise<TransactionRecord[]> {
@@ -411,18 +316,12 @@ export async function getTransactionsForStatement(
   return db.getAllFromIndex('transactions', 'by-statement', statementId);
 }
 
-/** Every transaction for one card, across every statement — one query via
- * the `by-card-date` compound index (a range covering every `dateISO` for
- * this `cardId`), rather than CardDetail fetching per-statement in a loop.
- * Used to compute each statement's spend total without a second round of
- * per-statement queries. */
+/** Every transaction on one card, in one by-card-date range query. */
 export async function getTransactionsForCard(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
 ): Promise<TransactionRecord[]> {
-  // '￿' sorts after any real dateISO string ('YYYY-MM-DD' never
-  // contains a character that high), so the upper bound covers every date
-  // this card could have without needing to know the actual max in advance.
+  // '\uffff' sorts after any real date string.
   const range = IDBKeyRange.bound([cardId, ''], [cardId, '￿']);
   return db.getAllFromIndex('transactions', 'by-card-date', range);
 }
@@ -442,17 +341,9 @@ export async function putSetting(
   await db.put('settings', { key, value });
 }
 
-/**
- * Delete a card and everything derived from it — statements,
- * transactions, cycles — in one atomic IndexedDB transaction, so an
- * interruption can't leave orphaned rows pointing at a card that no
- * longer exists. Same cascade instinct as SQL's ON DELETE CASCADE, done
- * by hand because IndexedDB has no foreign keys.
- *
- * Deliberately irreversible and total: the user asked for the card to be
- * gone from this device, and half-deleting (say, keeping transactions)
- * would leak exactly the data they asked to remove.
- */
+/** Delete a card with all its statements, transactions and cycles in one
+ * IndexedDB transaction (no foreign keys to cascade for us). Total on
+ * purpose: the user asked for this card's data to be gone. */
 export async function deleteCardCascade(
   db: IDBPDatabase<KardabraSchema>,
   cardId: string,
@@ -462,10 +353,8 @@ export async function deleteCardCascade(
     'readwrite',
   );
 
-  // Every store keyed or indexed on cardId supports a range covering all
-  // of that card's rows: [cardId, lowest] .. [cardId, highest] on the
-  // compound key/index. '￿' is a string ceiling no real period/date
-  // reaches.
+  // [cardId, ''] .. [cardId, '\uffff'] covers every row of this card on each
+  // compound key or index.
   const cardRange = IDBKeyRange.bound([cardId, ''], [cardId, '￿']);
 
   const statementKeys = await tx

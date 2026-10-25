@@ -40,6 +40,45 @@ test('import a statement and see it on the dashboard, with no network', async ({
   expect(offsite).toEqual([]);
 });
 
+test('card page: statements, transactions, fix payment, rename, fee', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('#statement-file-input').setInputFiles(fixture);
+  await expect(page.getByText('Name this card')).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Import', exact: true })
+    .last()
+    .click();
+  await page.locator('.card-tile').first().click();
+
+  await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Transactions' }),
+  ).toBeVisible();
+  const rows = page.locator('.txn-table tbody tr');
+  await expect(rows.first()).toBeVisible();
+
+  // Fix bill payment: checkboxes appear, Cancel removes them.
+  await page.getByRole('button', { name: 'Fix bill payment' }).click();
+  await expect(page.getByRole('checkbox').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Rename' }).click();
+  await page.getByLabel('Card nickname').fill('Travel card');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Travel card' }),
+  ).toBeVisible();
+
+  await page.getByLabel('Fee:').selectOption('AMOUNT');
+  await page.getByLabel('Annual fee amount').fill('2500');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('₹2,500.00/yr')).toBeVisible();
+});
+
 test('unlock a password-protected PDF with cardholder details, with no network', async ({
   page,
 }) => {

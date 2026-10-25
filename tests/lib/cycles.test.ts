@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  actionableCycle,
-  isSettledBySuccessor,
-  cycleNeedsPayment,
-} from '../../src/lib/cycles';
+import { actionableCycle, cycleNeedsPayment } from '../../src/lib/cycles';
 import { unpaidSummary } from '../../src/lib/unpaidSummary';
 import { formatINR } from '../../src/lib/money';
 import type { CardRecord, CycleRecord } from '../../src/db/schema';
@@ -36,24 +32,6 @@ describe('actionableCycle — the settled-by-successor rule', () => {
   it('year boundary: 2026-01 supersedes 2025-12 (lexicographic = chronological)', () => {
     const cycles = [cycle({ period: '2025-12' }), cycle({ period: '2026-01' })];
     expect(actionableCycle(cycles)?.period).toBe('2026-01');
-  });
-});
-
-describe('isSettledBySuccessor', () => {
-  const cycles = [
-    cycle({ period: '2025-08' }),
-    cycle({ period: '2025-09' }),
-    cycle({ period: '2025-10' }),
-  ];
-
-  it('older periods are settled, the latest is not', () => {
-    expect(isSettledBySuccessor('2025-08', cycles)).toBe(true);
-    expect(isSettledBySuccessor('2025-09', cycles)).toBe(true);
-    expect(isSettledBySuccessor('2025-10', cycles)).toBe(false);
-  });
-
-  it('a lone cycle is never settled', () => {
-    expect(isSettledBySuccessor('2025-10', [cycle()])).toBe(false);
   });
 });
 

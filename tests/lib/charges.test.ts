@@ -3,7 +3,18 @@ import {
   classifyCharge,
   chargeTotals,
   annualFeeNet,
+  feeDiscrepancyNote,
 } from '../../src/lib/charges';
+
+describe('feeDiscrepancyNote', () => {
+  it('speaks only when a fee was charged against a free label', () => {
+    expect(feeDiscrepancyNote({ type: 'LTF' }, 500)).toContain('lifetime free');
+    expect(feeDiscrepancyNote({ type: 'FYF' }, 500)).toContain('second year');
+    expect(feeDiscrepancyNote({ type: 'AMOUNT', amount: 500 }, 500)).toBeNull();
+    expect(feeDiscrepancyNote(undefined, 500)).toBeNull();
+    expect(feeDiscrepancyNote({ type: 'LTF' }, 0)).toBeNull();
+  });
+});
 
 describe('classifyCharge', () => {
   it.each([

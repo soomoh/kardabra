@@ -6,12 +6,8 @@
  */
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  planImport,
-  commitImport,
-  type ParseResult,
-  type CommitUserInput,
-} from '../../src/import/plan';
+import { planImport, type ParseResult } from '../../src/import/plan';
+import { commitImport, type CommitUserInput } from '../../src/import/commit';
 import {
   openKardabraDb,
   getAllCards,

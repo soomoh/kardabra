@@ -15,7 +15,8 @@ import {
   type InputFile,
   type PdfReader,
 } from '../../src/import/read';
-import { commitImport, planImport } from '../../src/import/plan';
+import { planImport } from '../../src/import/plan';
+import { commitImport } from '../../src/import/commit';
 import { getAllCards, openKardabraDb } from '../../src/db/db';
 import { readPdfText } from '../../src/parser';
 

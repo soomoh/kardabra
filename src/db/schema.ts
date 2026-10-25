@@ -26,16 +26,9 @@ export interface CardRecord {
   nickname: string;
   dueDay?: number; // 1-31; the ask-once answer, see above
   createdAt: string; // ISO date-time, Date.prototype.toISOString()
-  /** What the user was told/promised about this card's annual fee — a
-   * value-field addition, not a schema version bump: IndexedDB stores
-   * are schemaless (see this file's header comment), so an optional
-   * field any existing CardRecord simply lacks needs no `upgrade`
-   * migration and no DB_VERSION change in db.ts — `feeLabel === undefined`
-   * already means "not set" for every card imported before this field
-   * existed, for free. 'LTF'/'FYF' carry no `amount` (there's no number
-   * to compare against); 'AMOUNT' always does — CardDetail's fee
-   * discrepancy note is what reads this against the observed net annual
-   * fee (lib/charges.ts's annualFeeNet). */
+  /** What the card was promised to cost each year; absent = not set. An
+   * optional value field, so no DB_VERSION bump. Only 'AMOUNT' carries an
+   * amount. Read by lib/charges.ts feeDiscrepancyNote. */
   feeLabel?: { type: 'LTF' | 'FYF' | 'AMOUNT'; amount?: number };
   /** ISO 4217 code from the card's statements; absent means INR (cards
    * created before currencies were stored). */

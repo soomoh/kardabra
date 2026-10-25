@@ -6,7 +6,6 @@ import {
   openKardabraDb,
   getAllCards,
   getCard,
-  getCardByLast4,
   putCard,
   getStatement,
   getAllStatements,
@@ -176,7 +175,7 @@ describe('openKardabraDb', () => {
 });
 
 describe('cards', () => {
-  it('putCard + getAllCards + getCardByLast4 round-trip', async () => {
+  it('putCard + getAllCards round-trip', async () => {
     const db = await openKardabraDb();
     const regalia = card({ last4: '1111', nickname: 'Regalia' });
     const swiggy = card({
@@ -188,8 +187,7 @@ describe('cards', () => {
     await putCard(db, swiggy);
 
     expect(await getAllCards(db)).toHaveLength(2);
-    expect(await getCardByLast4(db, '2222')).toEqual(swiggy);
-    expect(await getCardByLast4(db, '0000')).toBeUndefined();
+    expect(await getAllCards(db)).toContainEqual(swiggy);
     db.close();
   });
 

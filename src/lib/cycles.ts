@@ -14,8 +14,8 @@
  * cycles are "settled by successor": not paid, not outstanding, just
  * absorbed. This rule is derived fresh from the data every time rather
  * than stored as a flag, so it can never go stale; anything that counts,
- * sums, or reasons about which cycle to act on must go through these two
- * functions.
+ * sums, or reasons about which cycle to act on must go through
+ * actionableCycle.
  */
 
 import type { CycleRecord } from '../db/schema';
@@ -28,16 +28,6 @@ export function actionableCycle(cycles: CycleRecord[]): CycleRecord | null {
   return cycles.reduce((latest, cycle) =>
     cycle.period > latest.period ? cycle : latest,
   );
-}
-
-/** True when `period` has been superseded by a newer cycle in `cycles`
- * and is therefore settled-by-successor (see the header comment). */
-export function isSettledBySuccessor(
-  period: string,
-  cycles: CycleRecord[],
-): boolean {
-  const actionable = actionableCycle(cycles);
-  return actionable !== null && period < actionable.period;
 }
 
 /** The slice of CycleRecord the needs-payment question depends on — a

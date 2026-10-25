@@ -1,20 +1,13 @@
 import { useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { describeDbError, useDb, useReportError } from '../db/DbProvider';
-import TotalsWarning from './TotalsWarning';
 import PasswordStep from './PasswordStep';
+import ImportReview from './ImportReview';
 import { useDataVersion } from '../context/DataVersionContext';
 import { getAllCards, getAllStatements } from '../db/db';
-import type { StatementErrorKind } from '../parser';
-import {
-  planImport,
-  commitImport,
-  cardInputKey,
-  type ParseResult,
-  type FileOutcome,
-  type CommitUserInput,
-} from '../import/plan';
-import { buildFeedbackReport, type FeedbackEntry } from '../import/feedback';
+import { planImport, type ParseResult, type FileOutcome } from '../import/plan';
+import { commitImport, type CommitUserInput } from '../import/commit';
+import { withSuggestedNames } from '../import/review';
 import {
   readStatementFiles,
   skippedLockedResults,
@@ -23,37 +16,17 @@ import {
   type UnlockInput,
 } from '../import/read';
 import { readPdfInBrowser } from '../import/browserPdf';
-import {
-  formatDateLabel,
-  formatPeriodLabel,
-  isValidDueDay,
-} from '../lib/dates';
 import type { View } from '../App';
 
 interface ImportPageProps {
   setView: (view: View) => void;
 }
 
-// Rejection kinds that are a CORRECT classification, not a failure to read the
-// file — these are skipped cleanly and never prompt a "help us support this"
-// report. Everything else the parser couldn't read (no table, unknown dates, a
-// genuine error) is reportable.
-const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = [
-  'savings-statement',
-  'pdf-locked',
-];
-
 /**
- * The whole page's state as one discriminated union, not a pile of
- * booleans (`isPlanning`/`isCommitting`/`hasError` etc. all
- * independently settable, and therefore independently capable of
- * disagreeing with each other). A state machine makes the illegal
- * combinations — committing with no plan, an error with no plan to show
- * it next to — unrepresentable rather than just "shouldn't happen".
- *
- * `commitError` lives on the 'planned' variant rather than as a fourth
- * top-level stage: a failed commit lands the user back on the same plan
- * they were looking at, with a message added, not a different screen.
+ * The page's state as one discriminated union, so illegal combinations
+ * (committing with no plan, an error with no plan beside it) can't be
+ * represented. A failed commit returns to 'planned' with `commitError`
+ * set: the user lands back on the plan they were looking at.
  */
 type ImportState =
   | { stage: 'idle' }
@@ -80,62 +53,6 @@ type ImportState =
       outcomes: FileOutcome[];
       inputs: CommitUserInput;
     };
-
-/** An outcome's own file name, regardless of which variant it is —
- * 'new-statement' carries it nested inside `parsed`, the other three
- * variants hoist it to the top level (see plan.ts's header comment on
- * why). */
-function outcomeFileName(outcome: FileOutcome): string {
-  return outcome.kind === 'new-statement'
-    ? outcome.parsed.fileName
-    : outcome.fileName;
-}
-
-/** Every due day the plan requires has been supplied (a card name left
- * blank falls back to the suggestion — see withSuggestedNames). Drives the
- * Import button's disabled state — computed fresh from `outcomes` and
- * `inputs` rather than tracked as its own boolean, so it can never drift
- * out of sync with what's actually been typed. */
-function planIsComplete(
-  outcomes: FileOutcome[],
-  inputs: CommitUserInput,
-): boolean {
-  for (const outcome of outcomes) {
-    if (outcome.kind !== 'new-statement') continue;
-    const key = cardInputKey(outcome.cardRef, outcome.parsed.fileName);
-    const dueDay = inputs.dueDays.get(key);
-    if (
-      outcome.needsDueDay &&
-      (dueDay === undefined || !isValidDueDay(dueDay))
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** The card-name box shows the suggestion as a placeholder, so a name left
- * blank means "use the suggestion". */
-function suggestedName(outcome: FileOutcome): string | undefined {
-  return outcome.kind === 'new-statement' && outcome.cardRef.kind === 'new'
-    ? outcome.cardRef.suggestedNickname
-    : undefined;
-}
-
-function withSuggestedNames(
-  outcomes: FileOutcome[],
-  inputs: CommitUserInput,
-): CommitUserInput {
-  const nicknames = new Map(inputs.nicknames);
-  for (const outcome of outcomes) {
-    const suggestion = suggestedName(outcome);
-    if (outcome.kind !== 'new-statement' || suggestion === undefined) continue;
-    const key = cardInputKey(outcome.cardRef, outcome.parsed.fileName);
-    if ((nicknames.get(key) ?? '').trim() === '')
-      nicknames.set(key, suggestion);
-  }
-  return { ...inputs, nicknames };
-}
 
 function ImportPage({ setView }: ImportPageProps) {
   const db = useDb();
@@ -262,11 +179,8 @@ function ImportPage({ setView }: ImportPageProps) {
     setState({ ...state, inputs: { ...state.inputs, nicknames } });
   }
 
-  /** `null` clears the entry (the input was emptied) rather than storing
-   * it as `0` — `Number('')` is `0`, and 0 is a real day-of-month
-   * (well, isn't, but the point stands for any digit the user hasn't
-   * finished typing), not "no answer yet". Same sentinel-vs-value
-   * distinction as CardRecord.dueDay's own comment in schema.ts. */
+  /** `null` (the box was emptied) clears the answer rather than storing
+   * `Number('')`, i.e. 0. */
   function updateDueDay(key: string, value: number | null) {
     if (state.stage !== 'planned') return;
     const dueDays = new Map(state.inputs.dueDays);
@@ -368,257 +282,22 @@ function ImportPage({ setView }: ImportPageProps) {
     );
   }
 
-  const { outcomes, inputs } = state;
-  const newStatements = outcomes.filter((o) => o.kind === 'new-statement');
-  const duplicates = outcomes.filter((o) => o.kind === 'duplicate');
-  const rejected = outcomes.filter((o) => o.kind === 'rejected');
-  const failed = outcomes.filter((o) => o.kind === 'failed');
-
-  // Tracks which cardInputKeys have already had their <input> rendered in
-  // this pass, so two files that share a new card (planImport's batch
-  // dedupe — see cardInputKey's own comment) render exactly one nickname
-  // box and one due-day box between them, not one per file.
-  const renderedNicknameKeys = new Set<string>();
-  const renderedDueDayKeys = new Set<string>();
-
-  const committing = state.stage === 'committing';
-
-  // Only files the parser genuinely couldn't READ become a report. A cleanly
-  // classified skip (a savings statement, say) is the parser succeeding, not
-  // failing, so it never appears here. Each entry carries a number-masked
-  // diagnostic; the report is built and downloaded on the device — nothing is
-  // uploaded.
-  const feedbackEntries: FeedbackEntry[] = [];
-  for (const outcome of outcomes) {
-    if (outcome.kind === 'failed') {
-      feedbackEntries.push({
-        fileName: outcome.fileName,
-        kind: 'failed',
-        detail: outcome.message,
-        diagnostic: diagnostics.get(outcome.fileName),
-      });
-    } else if (
-      outcome.kind === 'rejected' &&
-      !UNDERSTOOD_REJECTIONS.includes(outcome.errorKind)
-    ) {
-      feedbackEntries.push({
-        fileName: outcome.fileName,
-        kind: 'rejected',
-        errorKind: outcome.errorKind,
-        detail: outcome.advice,
-        diagnostic: diagnostics.get(outcome.fileName),
-      });
-    }
-  }
-
-  function downloadReport() {
-    const blob = new Blob([buildFeedbackReport(feedbackEntries)], {
-      type: 'text/plain',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'kardabra-unreadable-statements.txt';
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
+  const { results, outcomes, inputs } = state;
   return (
-    <div>
-      <h1>Import statements</h1>
-      {state.stage === 'planned' && dropzone}
-
-      {newStatements.length > 0 && (
-        <section>
-          <h2>New statements</h2>
-          <ul className="plan-list">
-            {newStatements.map((outcome) => {
-              if (outcome.kind !== 'new-statement') return null;
-              const key = cardInputKey(
-                outcome.cardRef,
-                outcome.parsed.fileName,
-              );
-              const showNicknameInput =
-                outcome.cardRef.kind === 'new' &&
-                !renderedNicknameKeys.has(key);
-              if (showNicknameInput) renderedNicknameKeys.add(key);
-              const showDueDayInput =
-                outcome.needsDueDay && !renderedDueDayKeys.has(key);
-              if (showDueDayInput) renderedDueDayKeys.add(key);
-
-              return (
-                <li key={outcomeFileName(outcome)} className="plan-row">
-                  <div className="plan-row-file">
-                    {outcomeFileName(outcome)}
-                  </div>
-                  <div className="plan-row-details">
-                    {outcome.cardRef.kind === 'existing' ? (
-                      <span>{outcome.cardRef.nickname}</span>
-                    ) : showNicknameInput ? (
-                      // A visible "Name this card" label, not just a
-                      // pre-filled box: the nickname is the ONLY thing that
-                      // identifies this card on the dashboard (the tile
-                      // shows no card number — see CardTile), so the
-                      // import step makes naming it explicit.
-                      <label className="nickname-field">
-                        Name this card
-                        <input
-                          type="text"
-                          value={inputs.nicknames.get(key) ?? ''}
-                          onChange={(e) => updateNickname(key, e.target.value)}
-                          placeholder={suggestedName(outcome)}
-                          aria-label={`Name for ${outcomeFileName(outcome)}`}
-                        />
-                      </label>
-                    ) : (
-                      <span>
-                        {inputs.nicknames.get(key) || suggestedName(outcome)}
-                      </span>
-                    )}
-                    <span>{formatPeriodLabel(outcome.period)}</span>
-                    {outcome.parsed.summary.paymentDueDateISO && (
-                      <span>
-                        due{' '}
-                        {formatDateLabel(
-                          outcome.parsed.summary.paymentDueDateISO,
-                        )}
-                      </span>
-                    )}
-                    <span>{outcome.parsed.transactions.length} txns</span>
-                    <TotalsWarning
-                      summary={outcome.parsed.summary}
-                      transactions={outcome.parsed.transactions}
-                      skippedRows={outcome.parsed.warnings.length}
-                    />
-                    {showDueDayInput && (
-                      <label>
-                        Due day of month
-                        {inputs.dueDays.has(key) &&
-                          !isValidDueDay(inputs.dueDays.get(key)!) && (
-                            <span className="error-text" role="alert">
-                              {' '}
-                              Enter a day from 1 to 31
-                            </span>
-                          )}
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          value={inputs.dueDays.get(key) ?? ''}
-                          onChange={(e) =>
-                            updateDueDay(
-                              key,
-                              e.target.value === ''
-                                ? null
-                                : Number(e.target.value),
-                            )
-                          }
-                        />
-                      </label>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {duplicates.length > 0 && (
-        <section>
-          <h2>Already imported</h2>
-          <ul className="plan-list">
-            {duplicates.map((outcome) => {
-              if (outcome.kind !== 'duplicate') return null;
-              return (
-                <li key={outcome.fileName} className="plan-row">
-                  <div className="plan-row-file">{outcome.fileName}</div>
-                  <div className="plan-row-details">
-                    <span>
-                      already imported ({outcome.existingTxnCount} txns) — this
-                      file: {outcome.newTxnCount}
-                    </span>
-                    {outcome.supersedes && (
-                      <span className="badge">will replace</span>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {rejected.length > 0 && (
-        <section>
-          <h2>Skipped</h2>
-          <ul className="plan-list">
-            {rejected.map((outcome) => {
-              if (outcome.kind !== 'rejected') return null;
-              return (
-                <li key={outcome.fileName} className="plan-row">
-                  <div className="plan-row-file">{outcome.fileName}</div>
-                  <div className="plan-row-details">{outcome.advice}</div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {failed.length > 0 && (
-        <section>
-          <h2>Failed</h2>
-          <ul className="plan-list">
-            {failed.map((outcome) => {
-              if (outcome.kind !== 'failed') return null;
-              return (
-                <li key={outcome.fileName} className="plan-row">
-                  <div className="plan-row-file">{outcome.fileName}</div>
-                  <div className="plan-row-details">{outcome.message}</div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {feedbackEntries.length > 0 && (
-        <section>
-          <p className="muted">
-            Kardabra couldn't read{' '}
-            {feedbackEntries.length === 1 ? 'one file' : 'some files'}. Download
-            a local report to help add support — it captures the file's
-            structure with numbers masked, stays on your device, and is yours to
-            review before sharing.
-          </p>
-          <button onClick={downloadReport}>Download report</button>
-        </section>
-      )}
-
-      {state.stage === 'planned' && state.commitError !== undefined && (
-        <p className="error-text">Import failed: {state.commitError}</p>
-      )}
-
-      <div className="import-actions">
-        <button
-          onClick={() => setState({ stage: 'idle' })}
-          disabled={committing}
-        >
-          Start over
-        </button>
-        <button
-          onClick={() =>
-            void handleCommit(state.results, outcomes, inputs).catch(
-              reportError,
-            )
-          }
-          disabled={committing || !planIsComplete(outcomes, inputs)}
-        >
-          {committing ? 'Importing…' : 'Import'}
-        </button>
-      </div>
-    </div>
+    <ImportReview
+      outcomes={outcomes}
+      inputs={inputs}
+      committing={state.stage === 'committing'}
+      commitError={state.stage === 'planned' ? state.commitError : undefined}
+      diagnostics={diagnostics}
+      dropzone={dropzone}
+      onNickname={updateNickname}
+      onDueDay={updateDueDay}
+      onStartOver={() => setState({ stage: 'idle' })}
+      onCommit={() =>
+        void handleCommit(results, outcomes, inputs).catch(reportError)
+      }
+    />
   );
 }
 

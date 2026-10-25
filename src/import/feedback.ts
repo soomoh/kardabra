@@ -9,6 +9,7 @@
  * to review it before sharing.
  */
 import { previewRows, cleanText, type StatementErrorKind } from '../parser';
+import type { FileOutcome } from './plan';
 
 const PREVIEW_ROW_LIMIT = 12;
 const CELL_CHAR_LIMIT = 40;
@@ -91,4 +92,46 @@ export function buildFeedbackReport(
     lines.push('');
   }
   return lines.join('\n').trimEnd() + '\n';
+}
+
+// Rejections that are a CORRECT classification, not a failure to read the
+// file: skipped cleanly, never offered as a "help us support this" report.
+const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = [
+  'savings-statement',
+  'pdf-locked',
+];
+
+/** The plan's files Kardabra genuinely couldn't read, as report entries,
+ * each with its number-masked diagnostic when one was taken. */
+export function feedbackEntriesFor(
+  outcomes: FileOutcome[],
+  diagnostics: Map<string, string>,
+): FeedbackEntry[] {
+  return outcomes.flatMap((outcome): FeedbackEntry[] => {
+    if (outcome.kind === 'failed') {
+      return [
+        {
+          fileName: outcome.fileName,
+          kind: 'failed',
+          detail: outcome.message,
+          diagnostic: diagnostics.get(outcome.fileName),
+        },
+      ];
+    }
+    if (
+      outcome.kind === 'rejected' &&
+      !UNDERSTOOD_REJECTIONS.includes(outcome.errorKind)
+    ) {
+      return [
+        {
+          fileName: outcome.fileName,
+          kind: 'rejected',
+          errorKind: outcome.errorKind,
+          detail: outcome.advice,
+          diagnostic: diagnostics.get(outcome.fileName),
+        },
+      ];
+    }
+    return [];
+  });
 }

@@ -5,7 +5,23 @@ import {
   netSpend,
   sumOfCredits,
   billUnderpaid,
+  priorExpectedDue,
+  paymentTolerance,
 } from '../../src/lib/spend';
+
+describe('priorExpectedDue', () => {
+  it("is the prior statement's total, else its spend, else nothing", () => {
+    expect(priorExpectedDue({ totalDue: 900 }, { spend: 700 })).toBe(900);
+    expect(priorExpectedDue({}, { spend: 700 })).toBe(700);
+    expect(priorExpectedDue({}, undefined)).toBeNull();
+    expect(priorExpectedDue(undefined, { spend: 700 })).toBeNull();
+  });
+
+  it('allows 0.5% of what was owed, at least ₹1', () => {
+    expect(paymentTolerance(10_000)).toBe(50);
+    expect(paymentTolerance(100)).toBe(1);
+  });
+});
 
 const purchases = [
   { payee: 'COOL COFFEE', amount: -500 },

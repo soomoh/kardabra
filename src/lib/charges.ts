@@ -31,6 +31,8 @@
  */
 
 import { daysBetweenISO } from './dates';
+import { formatINR } from './money';
+import type { CardRecord } from '../db/schema';
 
 export type ChargeCategory = 'interest' | 'late' | 'annual-fee';
 
@@ -109,7 +111,7 @@ export function chargeTotals(
  * Net annual fee actually charged in the trailing 365-day window ending
  * `todayISO` (a fee debit adds, a fee reversal credit subtracts — same
  * sign-aware netting as chargeTotals, which this delegates to). This is
- * the number CardDetail's fee-label discrepancy note compares against
+ * the number feeDiscrepancyNote compares against
  * what the card was promised to cost; it is never shown as a report of
  * its own.
  *
@@ -131,4 +133,26 @@ export function annualFeeNet(
     return ageInDays >= 0 && ageInDays <= 365;
   });
   return chargeTotals(inWindow)['annual-fee'];
+}
+
+/**
+ * The fee-label discrepancy note, or null when there's nothing to say. A
+ * silent watcher, not a report: it speaks only when an annual fee was
+ * charged (net of reversals, trailing year) on a card whose label says it
+ * shouldn't be — 'LTF' (never) or 'FYF' (not after year one, which can't be
+ * verified, so the note asks rather than asserts). 'AMOUNT' expects a fee,
+ * and an unlabelled card promised nothing.
+ */
+export function feeDiscrepancyNote(
+  label: CardRecord['feeLabel'],
+  feeNet: number,
+): string | null {
+  if (label === undefined || feeNet <= 0) return null;
+  if (label.type === 'LTF') {
+    return `${formatINR(feeNet)} annual fee detected on a card marked lifetime free — worth verifying with the bank.`;
+  }
+  if (label.type === 'FYF') {
+    return `${formatINR(feeNet)} annual fee detected — expected only from the second year; verify if this card is still in year one.`;
+  }
+  return null;
 }

@@ -5,7 +5,7 @@
  * seam, not the surface).
  *
  * The entries passed in are one-per-card, each carrying that card's
- * *actionable* cycle only (getActionableCycleByCard) — so settled-by-
+ * *actionable* cycle only (lib/cycles.ts actionableCycle) — so settled-by-
  * successor history can never inflate this count or sum by construction;
  * see lib/cycles.ts for the domain rule.
  */

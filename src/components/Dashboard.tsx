@@ -3,7 +3,6 @@ import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
 import {
   getAllCards,
-  getActionableCycleByCard,
   getAllStatements,
   getAllCycles,
   setCyclePaid,
@@ -13,6 +12,7 @@ import {
 import type { CardRecord, CycleRecord } from '../db/schema';
 import { sortDashboardCards, type CardWithCycle } from '../lib/sortCards';
 import { unpaidSummary } from '../lib/unpaidSummary';
+import { actionableCycle } from '../lib/cycles';
 import { todayISO } from '../lib/dates';
 import { monthlyTrends, type MonthlyTrends } from '../lib/trends';
 import CardTile from './CardTile';
@@ -40,25 +40,19 @@ function Dashboard({ setView }: DashboardProps) {
     let cancelled = false;
 
     (async () => {
-      const cards = await getAllCards(db);
-      const withCycles = await Promise.all(
-        cards.map(async (card) => ({
-          card,
-          cycle: await getActionableCycleByCard(db, card.id),
-        })),
-      );
-      const [statements, cycles] = await Promise.all([
+      const [cards, statements, cycles] = await Promise.all([
+        getAllCards(db),
         getAllStatements(db),
         getAllCycles(db),
       ]);
       if (cancelled) return;
-      setEntries(withCycles);
+      setEntries(
+        cards.map((card) => ({
+          card,
+          cycle: actionableCycle(cycles.filter((c) => c.cardId === card.id)),
+        })),
+      );
       setStatementCount(statements.length);
-      // cycle.spend is the single source of truth for what a cycle cost
-      // (recomputed by db.ts's recomputeCardSpends on every commit) — the
-      // chart reads it straight from the stored cycles rather than
-      // re-deriving it from transactions, so it can never disagree with
-      // what CardDetail's statement rows or this dashboard's own tiles show.
       setTrends(monthlyTrends(cards, cycles));
     })().catch(reportError);
 

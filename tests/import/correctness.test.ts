@@ -6,12 +6,8 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { IDBPDatabase } from 'idb';
-import {
-  commitImport,
-  planImport,
-  type CommitUserInput,
-  type ParseResult,
-} from '../../src/import/plan';
+import { planImport, type ParseResult } from '../../src/import/plan';
+import { commitImport, type CommitUserInput } from '../../src/import/commit';
 import {
   getActionableCycleByCard,
   getAllCards,

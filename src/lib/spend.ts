@@ -2,74 +2,34 @@
  * What "spend" means for a statement, and which credit(s) are the bill
  * payment.
  *
- * A statement's credits (money in) are two different things wearing the
- * same sign: the monthly BILL PAYMENT that settles the previous cycle's
- * balance, and SPEND ADJUSTMENTS (refunds, cashback, reversals) that hand
- * back part of what was spent this cycle. The bill payment is NOT negative
- * spending (it's last month's money leaving a bank account); an adjustment
- * IS (the bank returning part of a purchase). So spend must exclude the
- * payment but subtract the adjustments.
+ * Credits are two different things with the same sign: the BILL PAYMENT
+ * (last month's money leaving a bank account — not negative spending) and
+ * ADJUSTMENTS (refunds, cashback, reversals — the bank returning part of a
+ * purchase). Spend excludes the payment and subtracts the adjustments. The
+ * payment can be several rows (a bill paid in instalments).
  *
- * The payment is a SET, not a single transaction: a user can pay a bill in
- * installments within one cycle (two BPPY lines, say), so "the payment" can
- * legitimately be several rows. This module picks out that whole set.
+ * The payment set comes from a confidence ladder, most certain first
+ * (identifyPaymentIndices):
+ *   1. the user's OVERRIDE — they looked at their statement;
+ *   2. a PAYMENT KEYWORD on the payee — the statement says so itself, and
+ *      every line of a split payment matches;
+ *   3. an AMOUNT MATCH with the prior statement's expected due — catches an
+ *      unlabelled payment ('TELE TRANSFER CREDIT');
+ *   4. the LARGEST CREDIT — a payment clears a month's balance, so it is
+ *      almost always bigger than any refund; least certain, last resort;
+ *   5. no credits — nothing to exclude.
  *
- * How we tell the set apart — a confidence ladder, tried in order, the
- * first rung that applies wins (see `identifyPaymentIndices`):
- *
- *   1. an explicit user OVERRIDE, when supplied — the user looked at the
- *      statement and said "these rows are the payment" (or "none of them
- *      are"). Always wins: a human looking at their own bank statement
- *      knows more than any heuristic below.
- *   2. a PAYMENT KEYWORD match on the payee — every credit whose payee
- *      matches a payment phrase such as 'payment received', 'bppy' or
- *      'autopay' (see PAYMENT_KEYWORDS below).
- *      This is how splits are caught automatically: every BPPY line in a
- *      two-part payment matches, so all of them are excluded together.
- *   3. an AMOUNT MATCH against the prior statement's expected due — no
- *      keyword fired, but one credit's amount lands within tolerance of
- *      what was owed (catches a no-keyword payment like 'TELE TRANSFER
- *      CREDIT' whose payee gives no hint, but whose amount gives it away).
- *   4. the LARGEST-CREDIT fallback — no keyword, no prior bill to match
- *      against, so the biggest credit on the statement is assumed to be
- *      the payment (a payment clears a whole month's balance, so it's
- *      almost always larger than any single refund or cashback). This is
- *      the least certain signal, kept only as a last resort now that
- *      better signals are tried first.
- *   5. no credits at all — nothing to exclude.
- *
- * Why keyword beats amount-match beats largest-credit, not the reverse:
- * each rung is progressively less certain. A keyword is the statement
- * itself telling us "this is a payment" — a fact, not an inference. An
- * amount match is circumstantial (a refund could coincidentally equal the
- * prior bill) but still a real signal. Largest-credit is pure magnitude
- * with no corroborating evidence at all, so it only runs when there's
- * nothing better to go on.
- *
- * Deliberately NOT attempted: subset-sum search for a no-keyword SPLIT
- * payment (e.g. two unlabelled transfers that together equal the prior
- * due, but neither alone does). That is genuinely ambiguous — several
- * different subsets of a statement's credits can sum to the same total by
- * coincidence — and a wrong automatic guess here is exactly the kind of
- * silent money error this module is designed to avoid. The manual
- * override (rung 1) is the intended fix for that case, not a smarter
- * search.
+ * Not attempted: subset-sum for an unlabelled SPLIT payment. Several subsets
+ * of credits can sum to the prior due by coincidence, and a wrong silent
+ * guess is the error this module exists to avoid; the override covers it.
  */
 
-// Narrow on purpose: generic words like 'neft', 'imps' or 'transfer' also
-// describe non-payment credits (a refund routed back via NEFT, a person-
-// to-person transfer that happens to land on a card's linked account). A
-// false positive here would exclude a real credit from spend and OVERSTATE
-// it — the more dangerous direction, since a payment miscounted as spend
-// would UNDERSTATE it instead. A narrow keyword list produces false
-// negatives (a payment falls through to a lower rung), which is the safer
-// failure: rungs 3 and 4 below exist precisely to catch what rung 2 misses.
-//
-// The word "payment" counts only as a whole word: "XYZ PAYMENTS BANK
-// REFUND" (a Paytm/Airtel Payments Bank merchant refund) has "payments", not
-// "payment", and the exclusions below veto fee lines that mention it.
-// Matched against the lowercased payee with dashes and runs of whitespace
-// collapsed to single spaces ("AUTO-DEBIT" -> "auto debit").
+// Narrow on purpose: 'neft', 'imps', 'transfer' also describe refunds and
+// person-to-person credits. A false positive drops a real credit from spend
+// (overstating it); a false negative only falls through to rungs 3–4, the
+// safer failure. "payment" counts only as a whole word ("XYZ PAYMENTS BANK
+// REFUND" is a merchant refund). Matched against the lowercased payee with
+// dashes and whitespace runs collapsed ("AUTO-DEBIT" -> "auto debit").
 export const PAYMENT_KEYWORDS: RegExp[] = [
   /\bpayment\b/,
   /\bpymt\b/,
@@ -104,26 +64,17 @@ export function hasPaymentKeyword(payee: string): boolean {
   return PAYMENT_KEYWORDS.some((re) => re.test(text));
 }
 
-/** One payment row, identified by VALUE (amount + payee), not by array
- * index. This is how a user's manual pick is stored (CycleRecord.
- * paymentOverride) and re-matched against a fresh transaction list —
- * statements are deleted and recreated whole on every re-import (see
- * db.ts's putStatementWithTransactions), so no transaction ever has a
- * stable id an index-based reference could survive across that. */
+/** One payment row, identified by VALUE (amount + payee), not by index: a
+ * re-import deletes and recreates a statement's rows, so no index survives.
+ * How a user's manual pick is stored (CycleRecord.paymentOverride). */
 export interface PaymentMark {
   amount: number; // positive (a credit)
   payee: string;
 }
 
-/**
- * Match each `override` entry to a transaction by (amount, payee), each
- * transaction consumed at most once. Walks the override entries in order;
- * for each, finds the first not-yet-matched transaction with an equal
- * amount and payee. An override entry with no remaining match is simply
- * skipped (the statement changed since the override was saved — e.g. a
- * corrected re-import — so that mark no longer applies; there is nothing
- * safe to guess in its place).
- */
+/** Indices of the rows the override names, each row used at most once. A
+ * mark with no remaining match is skipped: the statement changed since it
+ * was saved (a corrected re-import), and there is nothing safe to guess. */
 function matchOverride(
   transactions: { payee: string; amount: number }[],
   override: PaymentMark[],
@@ -142,18 +93,35 @@ function matchOverride(
   return matched;
 }
 
-/**
- * The confidence-ranked payment SET: which indices of `transactions` are
- * the bill payment. See this module's header comment for the full ladder;
- * this function is that ladder, one branch per rung.
- *
- * `opts.override`, when it is an array (not `undefined`), always wins —
- * including an EMPTY array, which is the user's real, distinct assertion
- * "there is no payment on this statement" (sentinels are not zero: `[]`
- * here means something different from "not specified", the same way
- * CycleRecord.dueDateISO's `null` means something different from a missing
- * field — see schema.ts).
- */
+/** What a statement's payment is expected to clear, read off the PRIOR
+ * statement: its Total Amount Due, or its spend when the export carried no
+ * total (the best proxy for what was owed). null when unknown. */
+export function expectedDue(
+  priorTotalDue: number | undefined,
+  priorSpend: number | undefined,
+): number | null {
+  return priorTotalDue ?? priorSpend ?? null;
+}
+
+/** expectedDue for the statement before this one, or null when there is no
+ * earlier statement — the oldest one can't be reconciled. */
+export function priorExpectedDue(
+  priorStatement: { totalDue?: number } | undefined,
+  priorCycle: { spend?: number } | undefined,
+): number | null {
+  if (priorStatement === undefined) return null;
+  return expectedDue(priorStatement.totalDue, priorCycle?.spend);
+}
+
+/** How far a payment may be from the amount owed and still count as paying
+ * it: autopay rounds to whole rupees, so 0.5% or ₹1, whichever is larger. */
+export function paymentTolerance(owed: number): number {
+  return Math.max(1, owed * 0.005);
+}
+
+/** The payment set as indices into `transactions` — the ladder in this
+ * module's header, one branch per rung. An override that is an empty array
+ * is the user saying "no payment here", distinct from no override. */
 export function identifyPaymentIndices(
   transactions: { payee: string; amount: number }[],
   opts: { priorExpectedDue: number | null; override?: PaymentMark[] },
@@ -170,7 +138,7 @@ export function identifyPaymentIndices(
 
   const priorExpectedDue = opts.priorExpectedDue;
   if (priorExpectedDue !== null) {
-    const tolerance = Math.max(1, priorExpectedDue * 0.005); // 0.5% or ₹1
+    const tolerance = paymentTolerance(priorExpectedDue);
     let bestIndex = -1;
     let bestDistance = Infinity;
     transactions.forEach((txn, index) => {
@@ -199,13 +167,9 @@ export function identifyPaymentIndices(
   return [];
 }
 
-/** Net spend for a statement (positive number): every debit adds, every
- * credit EXCEPT the identified payment set subtracts. Signature takes the
- * payment index set directly (from `identifyPaymentIndices`) rather than
- * computing it itself, so a caller that already has the set (to label rows
- * in the UI, say) never derives it twice and risks disagreeing with
- * itself. Sign convention as everywhere: amounts are negative for money
- * out. */
+/** Net spend (positive): debits add, every credit outside the payment set
+ * subtracts. Takes the payment set rather than deriving it, so a caller that
+ * also labels the rows can't disagree with itself. */
 export function netSpend(
   transactions: { amount: number }[],
   paymentIndices: number[],
@@ -219,9 +183,7 @@ export function netSpend(
   return total;
 }
 
-/** Sum of every positive amount (every credit) in `transactions` —
- * payments and adjustments together, the input `billUnderpaid` below
- * reconciles against the prior bill. */
+/** Total of every credit — payments and adjustments together. */
 export function sumOfCredits(transactions: { amount: number }[]): number {
   let total = 0;
   for (const txn of transactions) {
@@ -231,33 +193,18 @@ export function sumOfCredits(transactions: { amount: number }[]): number {
 }
 
 /**
- * Does this statement's total credits fall short of the prior statement's
- * amount due — i.e. last cycle probably wasn't paid in full, so interest
- * may be levied next time? The soft-warning signal the user asked for.
+ * Did this statement's credits fall short of the prior statement's expected
+ * due — last bill probably not paid in full, so interest may follow?
  *
- * The question is "did this cycle's total CREDITS cover the prior bill",
- * not "did the identified payment alone cover it". A refund genuinely
- * reduces what's owed — if a ₹20,000 bill is met with an ₹18,000 payment
- * plus a ₹2,500 refund, the bill is covered, full stop, even though the
- * payment transaction alone falls short. Comparing only the identified
- * payment amount would produce a false warning in exactly this
- * refund-plus-partial-payment case. Summing every credit sidesteps the
- * question of which credit *is* the payment entirely — this check doesn't
- * need `identifyPaymentIndices` at all.
- *
- * `priorExpectedDue` is the previous statement's Total Amount Due, or its
- * spend when the bank's export carried no total (the best proxy for what
- * was owed). Returns false — no warning — when there's nothing to judge
- * against (no prior statement, or nothing was owed: `priorExpectedDue`
- * null or <= 0), or when total credits cleared the bill within a small
- * tolerance: autopay rounds to whole rupees, and *over*crediting is not a
- * shortfall.
+ * All credits count, not just the identified payment: a ₹20,000 bill met by
+ * an ₹18,000 payment plus a ₹2,500 refund is covered. False when there is
+ * nothing to judge (no prior bill, or nothing owed) or the shortfall is
+ * within paymentTolerance; overpaying is never a shortfall.
  */
 export function billUnderpaid(
   creditsTotal: number,
   priorExpectedDue: number | null,
 ): boolean {
   if (priorExpectedDue === null || priorExpectedDue <= 0) return false;
-  const tolerance = Math.max(1, priorExpectedDue * 0.005); // 0.5% or ₹1
-  return priorExpectedDue - creditsTotal > tolerance;
+  return priorExpectedDue - creditsTotal > paymentTolerance(priorExpectedDue);
 }
