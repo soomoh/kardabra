@@ -299,3 +299,29 @@ describe('text lines under the table', () => {
     ]);
   });
 });
+
+it('finds the card number below a long summary block (HDFC: ~90 label pairs)', () => {
+  // Labels printed above their values each become a pair row, all emitted
+  // before the page's own lines — enough of them once hid the card number.
+  const letters = (k: number) =>
+    String.fromCharCode(65 + (k % 26)) +
+    String.fromCharCode(65 + Math.floor(k / 26));
+  const summary = Array.from({ length: 70 }, (_, k) => [
+    t(`REWARD LEVEL ${letters(k)}`, 50, 2000 - k * 25),
+    t(String(k + 1), 50, 1990 - k * 25),
+  ]).flat();
+  const { last4 } = parsePdfText('x.pdf', [
+    page(
+      ...summary,
+      t('Credit Card No.', 50, 200),
+      t('411111XXXXXX4242', 200, 200),
+      t('DATE', 50, 150),
+      t('TRANSACTION DESCRIPTION', 140, 150),
+      t('AMOUNT', 500, 150),
+      t('20/01/2026', 50, 130),
+      t('CAFE ONE', 140, 130),
+      t('300.00', 500, 130),
+    ),
+  ]);
+  expect(last4).toBe('4242');
+});

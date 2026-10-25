@@ -73,7 +73,11 @@ export function accountLast4(
 
   // (whole line, lowered — for keyword context; cells — for extraction)
   const items: { line: string; cells: string[] }[] = [];
-  for (let i = 0; i < Math.min(rows.length, 60); i++) {
+  // The first 60 rows, and always everything above the table header — all of
+  // that is metadata. A PDF's summary pairs come first and can run past 60
+  // (HDFC: ~90), which would otherwise hide its card-number line.
+  const end = Math.min(rows.length, Math.max(60, headerAt));
+  for (let i = 0; i < end; i++) {
     const row = rows[i];
     if (isTransaction(i, row)) continue;
     // .map(cleanText) coerces every cell to a cleaned string up front —

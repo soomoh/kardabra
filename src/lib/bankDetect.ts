@@ -47,6 +47,16 @@ const BIN_PREFIXES: Record<string, Bank> = {
   ),
 };
 
+/** How each bank is named to the user. */
+export const BANK_NAMES: Record<Bank, string> = {
+  hdfc: 'HDFC Bank',
+  icici: 'ICICI Bank',
+  axis: 'Axis Bank',
+  sbi: 'SBI Card',
+  federal: 'Federal Bank',
+  indian_bank: 'Indian Bank',
+};
+
 export function bankFromFileName(fileName: string): Bank | null {
   const base = fileName.split(/[\\/]/).pop() ?? fileName;
   for (const { bank, pattern } of NAME_RULES) {

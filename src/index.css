@@ -311,7 +311,35 @@ input[type='number']::-webkit-inner-spin-button {
   gap: 0.15rem;
   font-size: 0.9rem;
 }
-.password-form input {
+.password-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.password-list legend {
+  padding: 0;
+  font-size: 0.9rem;
+}
+.password-list p {
+  margin: 0;
+  font-size: 0.8rem;
+}
+.password-form .link-button {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.password-form input,
+.password-list input {
   font: inherit;
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--border-color);

@@ -78,25 +78,25 @@ export async function readStatementFiles(
   return out;
 }
 
-/** What the user typed in the password step: their details, a password, or
- * both. Either part may be absent. */
+/** What the user typed in the password step: their details, any passwords
+ * they know, or both. Each typed password is tried on every file, so the
+ * user never has to say which password belongs to which file. */
 export interface UnlockInput {
   details?: PasswordInputs;
-  password?: string;
+  passwords?: string[];
 }
 
-/** The ordered passwords to try on one file: a typed password first, then
+/** The ordered passwords to try on one file: typed passwords first, then
  * the bank's patterns with the ones that opened this user's cards before
- * moved to the front. */
+ * moved to the front. No password is tried twice. */
 export function candidatesFor(
   fileName: string,
   input: UnlockInput,
   knownPatterns: string[],
 ): Candidate[] {
-  const typed: Candidate[] =
-    input.password !== undefined && input.password !== ''
-      ? [{ pattern: 'typed', password: input.password }]
-      : [];
+  const typed: Candidate[] = [
+    ...new Set((input.passwords ?? []).filter((p) => p !== '')),
+  ].map((password) => ({ pattern: 'typed', password }));
   if (input.details === undefined) return typed;
   const generated = passwordCandidates(
     input.details,
@@ -104,9 +104,10 @@ export function candidatesFor(
   );
   const known = generated.filter((c) => knownPatterns.includes(c.pattern));
   const rest = generated.filter((c) => !knownPatterns.includes(c.pattern));
+  const tried = new Set(typed.map((c) => c.password));
   return [
     ...typed,
-    ...[...known, ...rest].filter((c) => c.password !== input.password),
+    ...[...known, ...rest].filter((c) => !tried.has(c.password)),
   ];
 }
 
@@ -160,7 +161,7 @@ export function skippedLockedResults(locked: InputFile[]): ParseResult[] {
     error: new StatementError(
       'pdf-locked',
       'password-protected PDF was not unlocked',
-      'Skipped: this PDF is password-protected. Import it again with your details or its password.',
+      'Skipped — this PDF is password-protected. Import it again any time with your details or its password.',
     ),
   }));
 }

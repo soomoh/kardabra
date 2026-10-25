@@ -62,10 +62,13 @@ test('unlock a password-protected PDF with cardholder details, with no network',
     );
 
   await expect(
-    page.getByRole('heading', { name: 'Password-protected statements' }),
+    page.getByRole('heading', { name: 'Unlock your statements' }),
   ).toBeVisible();
+  // First step asks only name and date of birth.
+  await expect(page.getByLabel(/last 4 digits/)).toHaveCount(0);
+  await expect(page.getByLabel('Password 1')).toHaveCount(0);
   // Fabricated cardholder of the synthetic fixture (password JANE2010).
-  await page.getByLabel('Name as on the card').fill('Jane Doe');
+  await page.getByLabel('Name as on your card').fill('Jane Doe');
   await page.getByLabel(/Date of birth/).fill('20/10/1990');
   await page.getByRole('button', { name: 'Unlock' }).click();
 
@@ -83,4 +86,55 @@ test('unlock a password-protected PDF with cardholder details, with no network',
   await expect(page.getByText('₹12,345.67').first()).toBeVisible();
   await expect(page.getByText('Card ····4242')).toBeVisible();
   expect(offsite).toEqual([]);
+});
+
+test('files still locked after name and date of birth ask for the password', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page
+    .locator('#statement-file-input')
+    .setInputFiles(
+      fileURLToPath(
+        new URL('../fixtures/pdf_statement_locked.pdf', import.meta.url),
+      ),
+    );
+
+  await page.getByLabel('Name as on your card').fill('Jane Doe');
+  await page.getByLabel(/Date of birth/).fill('01/01/1990'); // wrong
+  await page.getByRole('button', { name: 'Unlock' }).click();
+
+  await expect(page.getByRole('alert')).toContainText('still locked');
+  await expect(page.getByLabel(/last 4 digits/)).toBeVisible();
+  const fixturePassword = 'JANE2010'; // pragma: allowlist secret
+  await page.getByLabel('Password 1').fill(fixturePassword);
+  await page.getByRole('button', { name: 'Unlock' }).click();
+
+  await expect(page.getByText('3 txns')).toBeVisible();
+});
+
+test('passwords alone, without name or date of birth, each tried on every file', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page
+    .locator('#statement-file-input')
+    .setInputFiles(
+      fileURLToPath(
+        new URL('../fixtures/pdf_statement_locked.pdf', import.meta.url),
+      ),
+    );
+
+  await page
+    .getByRole('button', { name: 'Have the passwords? Enter them instead' })
+    .click();
+  await page.getByLabel('Password 1').fill('SOMEOTHERBANK');
+  await page.getByRole('button', { name: '+ Add another password' }).click();
+  const fixturePassword = 'JANE2010'; // pragma: allowlist secret
+  await page.getByLabel('Password 2').fill(fixturePassword);
+  await page.getByRole('button', { name: 'Unlock' }).click();
+
+  await expect(page.getByText('3 txns')).toBeVisible();
 });

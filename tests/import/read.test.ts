@@ -85,10 +85,11 @@ describe('unlockFiles', () => {
     expect('parsed' in out.results[0]).toBe(true);
   });
 
-  it('opens with a typed password but never remembers it', async () => {
+  it('opens with one of several typed passwords, never remembering it', async () => {
+    // Passwords for other banks' files come first: each is tried on every file.
     const out = await unlockFiles(
       locked(),
-      { password: FIXTURE_PASSWORD },
+      { passwords: ['OTHER0101', 'third', FIXTURE_PASSWORD] },
       [],
       readPdf,
     );
@@ -128,14 +129,17 @@ describe('unlockFiles', () => {
 describe('candidatesFor', () => {
   const details = { ...jane, last4s: ['4242'] };
 
-  it('tries the typed password first, then known patterns, without repeats', () => {
+  it('tries typed passwords first, then known patterns, without repeats', () => {
     const list = candidatesFor(
       'x.pdf',
-      { details, password: FIXTURE_PASSWORD },
+      { details, passwords: ['other', FIXTURE_PASSWORD, 'other', ''] },
       ['ddmmyyyy'],
     );
-    expect(list[0]).toEqual({ pattern: 'typed', password: FIXTURE_PASSWORD });
-    expect(list[1].pattern).toBe('ddmmyyyy');
+    expect(list.slice(0, 2)).toEqual([
+      { pattern: 'typed', password: 'other' },
+      { pattern: 'typed', password: FIXTURE_PASSWORD },
+    ]);
+    expect(list[2].pattern).toBe('ddmmyyyy');
     expect(list.filter((c) => c.password === FIXTURE_PASSWORD)).toHaveLength(1);
   });
 
