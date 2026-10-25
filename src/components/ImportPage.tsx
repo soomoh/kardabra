@@ -2,9 +2,10 @@ import { useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { describeDbError, useDb, useReportError } from '../db/DbProvider';
 import TotalsWarning from './TotalsWarning';
+import PasswordStep from './PasswordStep';
 import { useDataVersion } from '../context/DataVersionContext';
 import { getAllCards, getAllStatements } from '../db/db';
-import { parseStatement, type StatementErrorKind } from '../parser';
+import type { StatementErrorKind } from '../parser';
 import {
   planImport,
   commitImport,
@@ -13,12 +14,20 @@ import {
   type FileOutcome,
   type CommitUserInput,
 } from '../import/plan';
+import { buildFeedbackReport, type FeedbackEntry } from '../import/feedback';
 import {
-  buildFeedbackReport,
-  fileDiagnostic,
-  type FeedbackEntry,
-} from '../import/feedback';
-import { formatPeriodLabel, isValidDueDay } from '../lib/dates';
+  readStatementFiles,
+  skippedLockedResults,
+  unlockFiles,
+  type InputFile,
+  type UnlockInput,
+} from '../import/read';
+import { readPdfInBrowser } from '../import/browserPdf';
+import {
+  formatDateLabel,
+  formatPeriodLabel,
+  isValidDueDay,
+} from '../lib/dates';
 import type { View } from '../App';
 
 interface ImportPageProps {
@@ -29,7 +38,10 @@ interface ImportPageProps {
 // file — these are skipped cleanly and never prompt a "help us support this"
 // report. Everything else the parser couldn't read (no table, unknown dates, a
 // genuine error) is reportable.
-const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = ['savings-statement'];
+const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = [
+  'savings-statement',
+  'pdf-locked',
+];
 
 /**
  * The whole page's state as one discriminated union, not a pile of
@@ -45,6 +57,16 @@ const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = ['savings-statement'];
  */
 type ImportState =
   | { stage: 'idle' }
+  | { stage: 'reading' }
+  | {
+      // Some PDFs need a password: asked once for the whole batch.
+      stage: 'locked';
+      results: ParseResult[];
+      locked: InputFile[];
+      passwordPatterns: Map<string, string>;
+      retry: boolean;
+      unlocking: boolean;
+    }
   | {
       stage: 'planned';
       results: ParseResult[];
@@ -69,7 +91,8 @@ function outcomeFileName(outcome: FileOutcome): string {
     : outcome.fileName;
 }
 
-/** Every nickname/dueDay the plan requires has been supplied. Drives the
+/** Every due day the plan requires has been supplied (a card name left
+ * blank falls back to the suggestion — see withSuggestedNames). Drives the
  * Import button's disabled state — computed fresh from `outcomes` and
  * `inputs` rather than tracked as its own boolean, so it can never drift
  * out of sync with what's actually been typed. */
@@ -80,11 +103,6 @@ function planIsComplete(
   for (const outcome of outcomes) {
     if (outcome.kind !== 'new-statement') continue;
     const key = cardInputKey(outcome.cardRef, outcome.parsed.fileName);
-
-    if (outcome.cardRef.kind === 'new') {
-      const nickname = inputs.nicknames.get(key);
-      if (nickname === undefined || nickname.trim() === '') return false;
-    }
     const dueDay = inputs.dueDays.get(key);
     if (
       outcome.needsDueDay &&
@@ -94,6 +112,29 @@ function planIsComplete(
     }
   }
   return true;
+}
+
+/** The card-name box shows the suggestion as a placeholder, so a name left
+ * blank means "use the suggestion". */
+function suggestedName(outcome: FileOutcome): string | undefined {
+  return outcome.kind === 'new-statement' && outcome.cardRef.kind === 'new'
+    ? outcome.cardRef.suggestedNickname
+    : undefined;
+}
+
+function withSuggestedNames(
+  outcomes: FileOutcome[],
+  inputs: CommitUserInput,
+): CommitUserInput {
+  const nicknames = new Map(inputs.nicknames);
+  for (const outcome of outcomes) {
+    const suggestion = suggestedName(outcome);
+    if (outcome.kind !== 'new-statement' || suggestion === undefined) continue;
+    const key = cardInputKey(outcome.cardRef, outcome.parsed.fileName);
+    if ((nicknames.get(key) ?? '').trim() === '')
+      nicknames.set(key, suggestion);
+  }
+  return { ...inputs, nicknames };
 }
 
 function ImportPage({ setView }: ImportPageProps) {
@@ -109,67 +150,108 @@ function ImportPage({ setView }: ImportPageProps) {
   );
 
   async function handleFiles(files: FileList) {
-    const results: ParseResult[] = [];
-    const batchDiagnostics = new Map<string, string>();
+    setState({ stage: 'reading' });
+    const inputs: InputFile[] = [];
+    const unreadable: ParseResult[] = [];
     for (const file of Array.from(files)) {
-      // Error containment at the file boundary (see plan.ts's header
-      // comment): one bad file becomes one 'rejected'/'failed' row in the
-      // plan, never an exception that aborts the whole batch.
       try {
-        const parsed = await parseStatement(file);
-        results.push({ fileName: file.name, parsed });
+        inputs.push({
+          name: file.name,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        });
       } catch (error) {
-        results.push({ fileName: file.name, error });
-        // Best-effort diagnostic so a genuinely unreadable file can be reported
-        // usefully; if even the bytes can't be read, skip it silently.
-        try {
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          batchDiagnostics.set(file.name, fileDiagnostic(bytes));
-        } catch {
-          /* no diagnostic available for this file */
-        }
+        unreadable.push({ fileName: file.name, error });
       }
     }
-    setDiagnostics(batchDiagnostics);
+    const read = await readStatementFiles(inputs, readPdfInBrowser);
+    setDiagnostics(read.diagnostics);
+    const results = [...unreadable, ...read.results];
+    if (read.locked.length > 0) {
+      setState({
+        stage: 'locked',
+        results,
+        locked: read.locked,
+        passwordPatterns: new Map(),
+        retry: false,
+        unlocking: false,
+      });
+      return;
+    }
+    await showPlan(results, new Map());
+  }
 
+  async function handleUnlock(input: UnlockInput) {
+    if (state.stage !== 'locked') return;
+    const locked = state;
+    setState({ ...locked, unlocking: true });
+    const knownPatterns = (await getAllCards(db)).flatMap((c) =>
+      c.pdfPasswordPattern === undefined ? [] : [c.pdfPasswordPattern],
+    );
+    const unlocked = await unlockFiles(
+      locked.locked,
+      input,
+      knownPatterns,
+      readPdfInBrowser,
+    );
+    const results = [...locked.results, ...unlocked.results];
+    const passwordPatterns = new Map([
+      ...locked.passwordPatterns,
+      ...unlocked.patterns,
+    ]);
+    if (unlocked.stillLocked.length > 0) {
+      setState({
+        ...locked,
+        results,
+        locked: unlocked.stillLocked,
+        passwordPatterns,
+        retry: true,
+        unlocking: false,
+      });
+      return;
+    }
+    await showPlan(results, passwordPatterns);
+  }
+
+  async function handleSkipLocked() {
+    if (state.stage !== 'locked') return;
+    await showPlan(
+      [...state.results, ...skippedLockedResults(state.locked)],
+      state.passwordPatterns,
+    );
+  }
+
+  async function showPlan(
+    results: ParseResult[],
+    passwordPatterns: Map<string, string>,
+  ) {
     // "planImport with fresh DB state" — read cards/statements right
     // before planning, not from some earlier snapshot, so duplicate
     // detection sees whatever's actually in the database now.
     const existingCards = await getAllCards(db);
     const existingStatements = await getAllStatements(db);
     const outcomes = planImport(results, existingCards, existingStatements);
-
-    // Prefill: one nickname entry per unique cardInputKey, defaulted to
-    // the plan's suggestion, so the input renders non-empty and the
-    // completeness check above starts out satisfied for cards the user
-    // doesn't feel like renaming.
-    const nicknames = new Map<string, string>();
-    for (const outcome of outcomes) {
-      if (outcome.kind !== 'new-statement' || outcome.cardRef.kind !== 'new') {
-        continue;
-      }
-      const key = cardInputKey(outcome.cardRef, outcome.parsed.fileName);
-      if (!nicknames.has(key)) {
-        nicknames.set(key, outcome.cardRef.suggestedNickname);
-      }
-    }
-
     setState({
       stage: 'planned',
       results,
       outcomes,
-      inputs: { nicknames, dueDays: new Map() },
+      inputs: { nicknames: new Map(), dueDays: new Map(), passwordPatterns },
     });
+  }
+
+  /** A failure mid-read must not leave the page stuck on "Reading…". */
+  function recover(error: unknown) {
+    setState({ stage: 'idle' });
+    reportError(error);
   }
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
-    void handleFiles(event.dataTransfer.files).catch(reportError);
+    void handleFiles(event.dataTransfer.files).catch(recover);
   }
 
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     if (event.target.files !== null)
-      void handleFiles(event.target.files).catch(reportError);
+      void handleFiles(event.target.files).catch(recover);
     event.target.value = ''; // allow re-selecting the same file(s) again
   }
 
@@ -203,7 +285,7 @@ function ImportPage({ setView }: ImportPageProps) {
   ) {
     setState({ stage: 'committing', results, outcomes, inputs });
     try {
-      await commitImport(db, outcomes, inputs);
+      await commitImport(db, outcomes, withSuggestedNames(outcomes, inputs));
       bump();
       setView({ name: 'dashboard' });
     } catch (error) {
@@ -258,6 +340,30 @@ function ImportPage({ setView }: ImportPageProps) {
       <div>
         <h1>Import statements</h1>
         {dropzone}
+      </div>
+    );
+  }
+
+  if (state.stage === 'reading') {
+    return (
+      <div>
+        <h1>Import statements</h1>
+        <p role="status">Reading files…</p>
+      </div>
+    );
+  }
+
+  if (state.stage === 'locked') {
+    return (
+      <div>
+        <h1>Import statements</h1>
+        <PasswordStep
+          fileNames={state.locked.map((f) => f.name)}
+          retry={state.retry}
+          unlocking={state.unlocking}
+          onUnlock={(input) => void handleUnlock(input).catch(recover)}
+          onSkip={() => void handleSkipLocked().catch(recover)}
+        />
       </div>
     );
   }
@@ -360,14 +466,24 @@ function ImportPage({ setView }: ImportPageProps) {
                           type="text"
                           value={inputs.nicknames.get(key) ?? ''}
                           onChange={(e) => updateNickname(key, e.target.value)}
-                          placeholder="e.g. HDFC Regalia"
+                          placeholder={suggestedName(outcome)}
                           aria-label={`Name for ${outcomeFileName(outcome)}`}
                         />
                       </label>
                     ) : (
-                      <span>{inputs.nicknames.get(key)}</span>
+                      <span>
+                        {inputs.nicknames.get(key) || suggestedName(outcome)}
+                      </span>
                     )}
                     <span>{formatPeriodLabel(outcome.period)}</span>
+                    {outcome.parsed.summary.paymentDueDateISO && (
+                      <span>
+                        due{' '}
+                        {formatDateLabel(
+                          outcome.parsed.summary.paymentDueDateISO,
+                        )}
+                      </span>
+                    )}
                     <span>{outcome.parsed.transactions.length} txns</span>
                     <TotalsWarning
                       summary={outcome.parsed.summary}

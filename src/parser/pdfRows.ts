@@ -15,6 +15,7 @@
  * positioned text in, rows out.
  */
 
+import { isBareAmount } from './cells';
 import { parseDate } from './dates';
 import { resolveTable } from './table';
 
@@ -45,6 +46,10 @@ const SAME_CELL = 3; // gap below which two items are one cell
 const HEADER_SECOND_LINE = 14; // a header wrapped onto a second line
 const VALUE_BELOW = 40; // how far below a label its value may sit
 const LABEL_CONTINUES = 12; // a label wrapped onto the next line
+// A description wrapped onto its own line sits within this of its row —
+// below it, or above and below when the bank centres a two-line description
+// on the row (HDFC). Footers, notes and section titles sit further away.
+const WRAP_DISTANCE = 11;
 
 const hasDigit = (s: string) => /\d/.test(s);
 // What a date cell starts with: a digit ("16 Jun 26", "14/01/2026|") or a
@@ -145,15 +150,13 @@ function headerAt(
   return null;
 }
 
-/** A data line snapped into the header's columns: each item goes to the
- * column whose centre is nearest its own; items sharing a column are joined
- * in reading order ("835.49" + "D" → "835.49 D"). */
-function snap(line: Line, columns: Cell[]): string[] {
-  const row = columns.map(() => '');
+/** The header column each of a line's items belongs to: the one whose
+ * centre is nearest the item's own. */
+function columnOf(line: Line, columns: Cell[]): number[] {
   const table = resolveTable(texts(columns));
   const dateCol = table && table !== 'savings' ? table.dateCol : -1;
   const descCol = table && table !== 'savings' ? table.descCol : -1;
-  for (const item of line.items) {
+  return line.items.map((item) => {
     let best = 0;
     for (let c = 1; c < columns.length; c++) {
       const d = Math.abs(center(columns[c]) - center(item));
@@ -163,8 +166,18 @@ function snap(line: Line, columns: Cell[]): string[] {
     // can sit nearer the Date header (SBI). The date column only takes what
     // looks like a date; any other text belongs to the description.
     if (best === dateCol && !DATE_START.test(item.text)) best = descCol;
-    row[best] = row[best] ? `${row[best]} ${item.text}` : item.text;
-  }
+    return best;
+  });
+}
+
+/** A data line snapped into the header's columns; items sharing a column
+ * are joined in reading order ("835.49" + "D" → "835.49 D"). */
+function snap(line: Line, columns: Cell[]): string[] {
+  const row = columns.map(() => '');
+  columnOf(line, columns).forEach((c, i) => {
+    const text = line.items[i].text;
+    row[c] = row[c] ? `${row[c]} ${text}` : text;
+  });
   return row;
 }
 
@@ -219,12 +232,98 @@ function continuesTable(lines: Line[], columns: Cell[]): boolean {
   });
 }
 
+function isDate(cell: string): boolean {
+  try {
+    parseDate(cell);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One page's lines below a table header, as rows. A line with a date or an
+ * amount is a table row. A line with only text continues a DATED row's
+ * description when it is within WRAP_DISTANCE of it (the nearest one) and
+ * starts no further left than that row's description — a footnote or legend
+ * printed under the table starts elsewhere. Text above a row joins it only
+ * when the row also has text below: a description centred on its row (HDFC).
+ * A lone line just above a row is something else (Axis's card-number line).
+ * Every other text line (page footer, fine print, a section title) is
+ * emitted as a one-cell row: narrower than any table, so the transaction
+ * reader skips it, while the card-number search can still see it.
+ */
+function tableRows(lines: Line[], columns: Cell[]): unknown[][] {
+  const table = resolveTable(texts(columns));
+  if (table === null || table === 'savings') {
+    return lines.map((line) => texts(line.cells));
+  }
+  const entries = lines.map((line) => {
+    const row = snap(line, columns);
+    const descX0 = Math.min(
+      ...columnOf(line, columns).flatMap((c, i) =>
+        c === table.descCol ? [line.items[i].x0] : [],
+      ),
+    );
+    return {
+      y: line.y,
+      x0: line.items[0].x0,
+      descX0, // Infinity when the row has no description text
+      row,
+      text: texts(line.items).join(' '),
+      dated: isDate(row[table.dateCol]),
+      isRow: isDate(row[table.dateCol]) || isBareAmount(row[table.amtCol]),
+      above: [] as number[],
+      below: [] as number[],
+    };
+  });
+  entries.forEach((entry, i) => {
+    if (entry.isRow) return;
+    let nearest = -1;
+    for (const [j, other] of entries.entries()) {
+      if (!other.dated) continue;
+      const d = Math.abs(other.y - entry.y);
+      if (
+        d <= WRAP_DISTANCE &&
+        (nearest < 0 || d < Math.abs(entries[nearest].y - entry.y))
+      ) {
+        nearest = j;
+      }
+    }
+    if (nearest < 0) return;
+    const target = entries[nearest];
+    // A row with no description of its own (HDFC prints it entirely above
+    // and below) has no left edge to check against.
+    const left = Number.isFinite(target.descX0) ? target.descX0 : -Infinity;
+    if (entry.x0 < left - SAME_CELL) return;
+    (entry.y > target.y ? target.above : target.below).push(i);
+  });
+  const wraps = new Set<number>();
+  for (const entry of entries) {
+    if (entry.below.length === 0) entry.above = [];
+    for (const i of [...entry.above, ...entry.below]) wraps.add(i);
+  }
+  return entries.flatMap((entry, i) => {
+    if (wraps.has(i)) return [];
+    if (!entry.isRow) return [[entry.text]];
+    const row = [...entry.row];
+    row[table.descCol] = [
+      ...entry.above.map((k) => entries[k].text),
+      row[table.descCol],
+      ...entry.below.map((k) => entries[k].text),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return [row];
+  });
+}
+
 /**
  * Rows for the parser: first the label-over-value pairs (so the summary
  * reader sees them before the table), then page lines — plain cells above
- * the first table header, header-snapped rows from it on. After the first
- * table, only pages that have their own header or that continue the table
- * (a readable date in the date column) contribute rows.
+ * the first table header, header-snapped rows from it on (see tableRows).
+ * After the first table, only pages that have their own header or that
+ * continue the table (a readable date in the date column) contribute rows.
  */
 export function rowsFromPdfPages(
   pages: { items: PdfTextItem[] }[],
@@ -236,16 +335,26 @@ export function rowsFromPdfPages(
   for (const lines of pageLineSets) {
     const hasHeader = lines.some((_, i) => headerAt(lines, i) !== null);
     if (columns && !hasHeader && !continuesTable(lines, columns)) continue;
+    // Lines under the current header, flushed at the next header or page end.
+    let pending: Line[] = [];
+    const flush = () => {
+      if (columns && pending.length > 0)
+        rows.push(...tableRows(pending, columns));
+      pending = [];
+    };
     for (let i = 0; i < lines.length; i++) {
       const header = headerAt(lines, i);
       if (header) {
+        flush();
         columns = header.cells;
         rows.push(texts(columns));
         i += header.span - 1;
         continue;
       }
-      rows.push(columns ? snap(lines[i], columns) : texts(lines[i].cells));
+      if (columns) pending.push(lines[i]);
+      else rows.push(texts(lines[i].cells));
     }
+    flush();
   }
   return rows;
 }

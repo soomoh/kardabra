@@ -56,9 +56,14 @@ describe('planImport — pure planning, no writes', () => {
       last4: '4321',
       suggestedNickname: 'Card ····4321',
     });
-    // A new card always asks for its due day, even though this statement
-    // carries a payment due date — parsed due dates aren't relied on yet.
-    expect(outcome.needsDueDay).toBe(true);
+    // The statement prints its due date, so there's nothing to ask.
+    expect(outcome.needsDueDay).toBe(false);
+  });
+
+  it('asks a new card for its due day only when the statement prints none', () => {
+    const p = parsed({ summary: { statementDateISO: '2025-10-13' } });
+    const [outcome] = planImport([ok(p)], [], []);
+    expect(outcome.kind === 'new-statement' && outcome.needsDueDay).toBe(true);
   });
 
   it('asks for a due day on an existing card only if it has none stored', () => {

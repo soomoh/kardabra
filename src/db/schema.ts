@@ -40,6 +40,11 @@ export interface CardRecord {
   /** ISO 4217 code from the card's statements; absent means INR (cards
    * created before currencies were stored). */
   currency?: string;
+  /** Which password pattern (lib/pdfPassword.ts id, e.g. 'name4U+ddmm')
+   * last opened this card's PDF statements — tried first next time. Only
+   * the pattern's name: never a password, name or date of birth. An optional
+   * value field, so no DB_VERSION bump (same reasoning as feeLabel). */
+  pdfPasswordPattern?: string;
 }
 
 /** One imported statement file's metadata, one row per (card, period).

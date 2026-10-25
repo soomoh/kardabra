@@ -10,36 +10,14 @@
  */
 
 import type { Anonymizer } from './anonymizer';
+import { readPdfText, type PdfItem, type PdfPage } from '../parser/pdf';
 
-export interface PdfTextItem {
-  s: string; // text
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  eol: boolean;
-}
+export { looksLikePdf, PdfPasswordError } from '../parser/pdf';
+export type PdfTextItem = PdfItem;
 export interface PdfText {
   format: 'kardabra-pdf-text/1';
   pdfjs: string;
-  pages: { width: number; height: number; items: PdfTextItem[] }[];
-}
-
-const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // "%PDF"
-
-export function looksLikePdf(bytes: Uint8Array): boolean {
-  return PDF_MAGIC.every((b, i) => bytes[i] === b);
-}
-
-/** Thrown when a PDF needs a password, or the given one is wrong. */
-export class PdfPasswordError extends Error {
-  constructor(readonly reason: 'needed' | 'incorrect') {
-    super(
-      reason === 'needed'
-        ? 'this PDF is password-protected — enter the statement password'
-        : 'that password did not open the PDF — check it and try again',
-    );
-  }
+  pages: PdfPage[];
 }
 
 /** Anonymize the strings of one line's items, keeping item boundaries. A token
@@ -67,64 +45,17 @@ export function anonymizeLine(strings: string[], anon: Anonymizer): string[] {
   return result;
 }
 
-type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
-
-/**
- * Open a PDF: first with no password, then with each candidate in order.
- * `unlockedWith` is the index of the password that worked (null when none
- * was needed) — never the password itself. Throws PdfPasswordError when
- * nothing opens it.
- */
-async function openPdf(pdfjs: PdfJs, bytes: Uint8Array, passwords: string[]) {
-  const attempts: (string | undefined)[] = [undefined, ...passwords];
-  for (const [i, password] of attempts.entries()) {
-    const task = pdfjs.getDocument({
-      data: bytes.slice(), // pdf.js detaches the buffer it's given
-      password,
-      useSystemFonts: false,
-      verbosity: 0,
-    });
-    try {
-      const doc = await task.promise;
-      return { task, doc, unlockedWith: i === 0 ? null : i - 1 };
-    } catch (error) {
-      await task.destroy();
-      if (!(error instanceof Error && error.name === 'PasswordException')) {
-        throw error;
-      }
-    }
-  }
-  throw new PdfPasswordError(passwords.length > 0 ? 'incorrect' : 'needed');
-}
-
 export async function anonymizePdf(
   bytes: Uint8Array,
   anon: Anonymizer,
   passwords: string[] = [],
 ): Promise<{ text: PdfText; unlockedWith: number | null }> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const { task, doc, unlockedWith } = await openPdf(pdfjs, bytes, passwords);
-
-  const pages: PdfText['pages'] = [];
-  for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p);
-    const viewport = page.getViewport({ scale: 1 });
-    const content = await page.getTextContent();
-    const items: PdfTextItem[] = [];
-    for (const raw of content.items) {
-      if (!('str' in raw)) continue;
-      items.push({
-        s: raw.str,
-        x: round(raw.transform[4]),
-        y: round(raw.transform[5]),
-        w: round(raw.width),
-        h: round(raw.height),
-        eol: raw.hasEOL,
-      });
-    }
+  const { pages, unlockedWith } = await readPdfText(pdfjs, bytes, passwords);
+  for (const page of pages) {
     // Group by visual line (same baseline), anonymize each line together.
-    const lines = new Map<number, PdfTextItem[]>();
-    for (const item of items) {
+    const lines = new Map<number, PdfItem[]>();
+    for (const item of page.items) {
       const key = Math.round(item.y);
       lines.set(key, [...(lines.get(key) ?? []), item]);
     }
@@ -136,19 +67,9 @@ export async function anonymizePdf(
       );
       line.forEach((item, i) => (item.s = replaced[i]));
     }
-    pages.push({
-      width: round(viewport.width),
-      height: round(viewport.height),
-      items,
-    });
   }
-  await task.destroy();
   return {
     text: { format: 'kardabra-pdf-text/1', pdfjs: pdfjs.version, pages },
     unlockedWith,
   };
-}
-
-function round(n: number): number {
-  return Math.round(n * 100) / 100;
 }

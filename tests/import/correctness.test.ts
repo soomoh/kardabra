@@ -314,3 +314,28 @@ describe('refresh and supersede in one batch', () => {
     db.close();
   });
 });
+
+it("a statement's printed due date wins over the card's saved due day", async () => {
+  const db = await openKardabraDb();
+  await importAll(
+    db,
+    [parsed({ fileName: 'oct.csv', transactions: [shop(1)] })],
+    input({ dueDays: new Map([['4321', 5]]) }),
+  );
+  const [card] = await getAllCards(db);
+  expect(card.dueDay).toBe(5);
+  await importAll(db, [
+    parsed({
+      fileName: 'nov.csv',
+      summary: {
+        statementDateISO: '2025-11-13',
+        paymentDueDateISO: '2025-12-03',
+      },
+      transactions: [shop(2)],
+    }),
+  ]);
+  expect((await getActionableCycleByCard(db, card.id))?.dueDateISO).toBe(
+    '2025-12-03',
+  );
+  db.close();
+});

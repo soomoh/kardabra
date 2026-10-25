@@ -199,3 +199,103 @@ describe('table header detection', () => {
     expect(p.transactions.map((x) => x.amount)).toEqual([-100, -50]);
   });
 });
+
+// Text under the table that is not part of any row: page footers, fine
+// print, legends, a card-number line — and real wrapped descriptions, which
+// must still be kept. Positions copied from real statements' geometry.
+describe('text lines under the table', () => {
+  const header = [
+    t('Statement Date', 50, 700),
+    t('13/02/2026', 200, 700),
+    t('DATE', 50, 600),
+    t('TRANSACTION DESCRIPTION', 140, 600),
+    t('AMOUNT', 500, 600),
+  ];
+  const payees = (...items: PdfTextItem[]) =>
+    parsePdfText('x.pdf', [page(...header, ...items)]).transactions.map(
+      (txn) => txn.payee,
+    );
+
+  it('keeps a page footer and fine print out of the last payee', () => {
+    expect(
+      payees(
+        t('20/01/2026', 50, 580),
+        t('CAFE ONE', 140, 580),
+        t('300.00', 500, 580),
+        t('*Transaction time is in IST.', 20, 552),
+        t('Page 1 of 2', 27, 20),
+      ),
+    ).toEqual(['CAFE ONE']);
+  });
+
+  it('keeps a description wrapped onto the next line', () => {
+    expect(
+      payees(
+        t('20/01/2026', 50, 580),
+        t('PAYMENT RECEIVED', 140, 580),
+        t('300.00', 500, 580),
+        t('(Ref# AB123)', 140, 570),
+        t('21/01/2026', 50, 556),
+        t('BOOK SHOP', 140, 556),
+        t('200.00', 500, 556),
+      ),
+    ).toEqual(['PAYMENT RECEIVED (Ref# AB123)', 'BOOK SHOP']);
+  });
+
+  it('joins a description centred on its row, half above and half below (HDFC)', () => {
+    expect(
+      payees(
+        t('16/01/2026', 50, 580),
+        t('SHOP ABROAD', 140, 580),
+        t('1,400.00', 500, 580),
+        t('IGST-RATE 18.0 (Ref#', 140, 569.5),
+        t('17/01/2026', 50, 565.2),
+        t('5.00', 500, 565.2),
+        t('AB123)', 140, 560.9),
+      ),
+    ).toEqual(['SHOP ABROAD', 'IGST-RATE 18.0 (Ref# AB123)']);
+  });
+
+  it('ignores a legend that starts left of the descriptions (ICICI)', () => {
+    expect(
+      payees(
+        t('14/04/2026', 50, 580),
+        t('SHOP IN', 140, 580),
+        t('379.98', 500, 580),
+        t('# International Spends', 45, 572),
+      ),
+    ).toEqual(['SHOP IN']);
+  });
+
+  it('ignores a card-number line just above the first row (Axis)', () => {
+    const rows = [
+      t('Card No: 4111XXXXXXXX4242', 45, 590),
+      t('18/08/2025', 50, 580),
+      t('SHOP ONE', 140, 580),
+      t('216.98', 500, 580),
+    ];
+    expect(payees(...rows)).toEqual(['SHOP ONE']);
+    // Still visible to the card-number search.
+    expect(parsePdfText('x.pdf', [page(...header, ...rows)]).last4).toBe(
+      '4242',
+    );
+  });
+
+  it('does not turn a summary box under the table into a transaction', () => {
+    const { transactions } = parsePdfText('x.pdf', [
+      page(
+        ...header,
+        t('20/01/2026', 50, 580),
+        t('CAFE ONE', 140, 580),
+        t('300.00', 500, 580),
+        t('Transactions for EMI', 54, 520),
+        t('CONVERTED TO EMI', 494, 520),
+        t('3', 226, 514),
+        t('13,838.83', 500, 514),
+      ),
+    ]);
+    expect(transactions).toEqual([
+      { dateISO: '2026-01-20', payee: 'CAFE ONE', amount: -300 },
+    ]);
+  });
+});

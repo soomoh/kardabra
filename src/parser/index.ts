@@ -143,3 +143,10 @@ export {
   extractTransactionsWithWarnings,
 } from './transactions';
 export { accountLast4 } from './account';
+export {
+  looksLikePdf,
+  readPdfText,
+  PdfPasswordError,
+  type PdfJs,
+  type PdfPage,
+} from './pdf';

@@ -19,7 +19,8 @@ export type StatementErrorKind =
   | 'savings-statement' // layout 1 (withdrawal/deposit columns): a bank account, not a card
   | 'no-table' // no header row with date + description + amount columns
   | 'unrecognised-date' // a date cell matched none of the known formats
-  | 'not-excel'; // file has neither the .xlsx (zip) nor legacy .xls (OLE2) magic bytes
+  | 'not-excel' // file has neither the .xlsx (zip) nor legacy .xls (OLE2) magic bytes
+  | 'pdf-locked'; // a password-protected PDF the user chose not to unlock
 
 export class StatementError extends Error {
   readonly kind: StatementErrorKind;

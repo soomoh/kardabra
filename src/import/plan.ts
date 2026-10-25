@@ -292,12 +292,11 @@ function planOneFile(
     cardRef.kind === 'existing'
       ? existingCards.find((card) => card.id === cardRef.cardId)
       : undefined;
-  // Ask for the due day whenever the card doesn't already have a stored one —
-  // for every new card, and for an existing card that was never given one.
-  // Parsed statement due dates aren't relied on for this yet, so the import
-  // experience is consistent: the user always sets the due day for a new card.
+  // The statement's own due date is used when it prints one; the due day is
+  // asked only as the fallback — no printed date and none stored for the card.
   const needsDueDay =
-    cardRef.kind === 'new' || existingCard?.dueDay === undefined;
+    parsed.summary.paymentDueDateISO === undefined &&
+    (cardRef.kind === 'new' || existingCard?.dueDay === undefined);
 
   return { kind: 'new-statement', parsed, period, cardRef, needsDueDay };
 }
@@ -398,6 +397,9 @@ export interface CommitResult {
 export interface CommitUserInput {
   nicknames: Map<string, string>;
   dueDays: Map<string, number>;
+  /** File name → the password pattern that unlocked it (import/read.ts);
+   * remembered on the file's card. */
+  passwordPatterns?: Map<string, string>;
 }
 
 /** Drop keys whose value is undefined, so optional record fields are
@@ -537,8 +539,16 @@ export async function commitImport(
       // (needsDueDay), so keep the answer — otherwise it is asked again on
       // every import and never used.
       const answered = dueDayFor(record.id);
+      const pattern = userInput.passwordPatterns?.get(fileName);
+      const updated = { ...record };
       if (record.dueDay === undefined && answered !== undefined) {
-        const updated = { ...record, dueDay: answered };
+        updated.dueDay = answered;
+      }
+      if (pattern !== undefined) updated.pdfPasswordPattern = pattern;
+      if (
+        updated.dueDay !== record.dueDay ||
+        updated.pdfPasswordPattern !== record.pdfPasswordPattern
+      ) {
         await putCard(db, updated);
         return updated;
       }
@@ -566,6 +576,7 @@ export async function commitImport(
       nickname,
       dueDay: dueDayFor(key),
       currency,
+      pdfPasswordPattern: userInput.passwordPatterns?.get(fileName),
       createdAt: new Date().toISOString(),
     });
     await putCard(db, card);
@@ -654,17 +665,18 @@ function buildCycleRecord(
 ): CycleRecord {
   const cardId = card.id;
   const { dueDay } = card;
-  // The user-set `dueDay` wins: project the due date from it relative to this
-  // statement's dateline (with a minimum grace gap — see nextDueDateWithGraceISO
-  // for the mis-projection it prevents). Only when no due day is known does the
-  // statement's own parsed due date stand in; with neither, the due date stays
-  // the null sentinel (unknown) rather than failing the commit.
+  // The date the bank printed wins. Without one, project from the user's
+  // `dueDay` relative to this statement's dateline (with a minimum grace gap —
+  // see nextDueDateWithGraceISO for the mis-projection it prevents); with
+  // neither, the due date stays the null sentinel (unknown) rather than
+  // failing the commit.
   const anchorDateISO =
     summary.statementDateISO ?? maxTransactionDateISO(parsed.transactions);
   const dueDateISO =
-    dueDay !== undefined && anchorDateISO !== null
+    summary.paymentDueDateISO ??
+    (dueDay !== undefined && anchorDateISO !== null
       ? nextDueDateWithGraceISO(anchorDateISO, dueDay)
-      : (summary.paymentDueDateISO ?? null);
+      : null);
 
   // Spend = debits minus cashback/refund-style credits, with the
   // identified bill-payment SET excluded (see lib/spend.ts for the

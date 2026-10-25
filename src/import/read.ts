@@ -1,0 +1,174 @@
+/**
+ * Step zero of an import: turn a batch of dropped files into ParseResults
+ * for `planImport`. Spreadsheets parse synchronously; PDFs go through
+ * pdf.js, and a password-protected PDF is set aside as `locked` so the UI
+ * can ask for the cardholder's details ONCE for the whole batch, then
+ * `unlockFiles` tries each bank's password patterns per file.
+ *
+ * Nothing typed here outlives the call: the details and passwords are used
+ * and dropped. The only thing kept is a pattern id ('name4U+ddmm') for the
+ * file that opened, which is not personal and lets the card try it first
+ * next month.
+ *
+ * The PDF opener is injected (`PdfReader`) so this runs in Node tests with
+ * pdf.js's legacy build and in the browser with the bundled worker.
+ */
+
+import {
+  looksLikePdf,
+  parsePdfText,
+  parseStatementBytes,
+  PdfPasswordError,
+  StatementError,
+  type PdfPage,
+} from '../parser';
+import { bankFromFileName } from '../lib/bankDetect';
+import {
+  passwordCandidates,
+  type Candidate,
+  type PasswordInputs,
+} from '../lib/pdfPassword';
+import { fileDiagnostic } from './feedback';
+import type { ParseResult } from './plan';
+
+export type PdfReader = (
+  bytes: Uint8Array,
+  passwords: string[],
+) => Promise<{ pages: PdfPage[]; unlockedWith: number | null }>;
+
+export interface InputFile {
+  name: string;
+  bytes: Uint8Array;
+}
+
+export interface ReadResult {
+  results: ParseResult[];
+  /** Password-protected PDFs still waiting for the user's details. */
+  locked: InputFile[];
+  /** Number-masked diagnostics for unreadable spreadsheets, by file name. */
+  diagnostics: Map<string, string>;
+}
+
+/** Parse each file; one bad file becomes one error result, never an
+ * exception that aborts the batch (see plan.ts on error containment). */
+export async function readStatementFiles(
+  files: InputFile[],
+  readPdf: PdfReader,
+): Promise<ReadResult> {
+  const out: ReadResult = { results: [], locked: [], diagnostics: new Map() };
+  for (const file of files) {
+    if (looksLikePdf(file.bytes)) {
+      try {
+        const { pages } = await readPdf(file.bytes, []);
+        out.results.push(parsePdf(file.name, pages));
+      } catch (error) {
+        if (error instanceof PdfPasswordError) out.locked.push(file);
+        else out.results.push({ fileName: file.name, error });
+      }
+      continue;
+    }
+    try {
+      const parsed = parseStatementBytes(file.name, file.bytes);
+      out.results.push({ fileName: file.name, parsed });
+    } catch (error) {
+      out.results.push({ fileName: file.name, error });
+      out.diagnostics.set(file.name, fileDiagnostic(file.bytes));
+    }
+  }
+  return out;
+}
+
+/** What the user typed in the password step: their details, a password, or
+ * both. Either part may be absent. */
+export interface UnlockInput {
+  details?: PasswordInputs;
+  password?: string;
+}
+
+/** The ordered passwords to try on one file: a typed password first, then
+ * the bank's patterns with the ones that opened this user's cards before
+ * moved to the front. */
+export function candidatesFor(
+  fileName: string,
+  input: UnlockInput,
+  knownPatterns: string[],
+): Candidate[] {
+  const typed: Candidate[] =
+    input.password !== undefined && input.password !== ''
+      ? [{ pattern: 'typed', password: input.password }]
+      : [];
+  if (input.details === undefined) return typed;
+  const generated = passwordCandidates(
+    input.details,
+    bankFromFileName(fileName),
+  );
+  const known = generated.filter((c) => knownPatterns.includes(c.pattern));
+  const rest = generated.filter((c) => !knownPatterns.includes(c.pattern));
+  return [
+    ...typed,
+    ...[...known, ...rest].filter((c) => c.password !== input.password),
+  ];
+}
+
+export interface UnlockResult {
+  results: ParseResult[];
+  stillLocked: InputFile[];
+  /** File name → the pattern id that opened it (never a typed password). */
+  patterns: Map<string, string>;
+}
+
+export async function unlockFiles(
+  locked: InputFile[],
+  input: UnlockInput,
+  knownPatterns: string[],
+  readPdf: PdfReader,
+): Promise<UnlockResult> {
+  const out: UnlockResult = {
+    results: [],
+    stillLocked: [],
+    patterns: new Map(),
+  };
+  for (const file of locked) {
+    const candidates = candidatesFor(file.name, input, knownPatterns);
+    if (candidates.length === 0) {
+      out.stillLocked.push(file);
+      continue;
+    }
+    try {
+      const { pages, unlockedWith } = await readPdf(
+        file.bytes,
+        candidates.map((c) => c.password),
+      );
+      const pattern =
+        unlockedWith === null ? undefined : candidates[unlockedWith].pattern;
+      if (pattern !== undefined && pattern !== 'typed') {
+        out.patterns.set(file.name, pattern);
+      }
+      out.results.push(parsePdf(file.name, pages));
+    } catch (error) {
+      if (error instanceof PdfPasswordError) out.stillLocked.push(file);
+      else out.results.push({ fileName: file.name, error });
+    }
+  }
+  return out;
+}
+
+/** Locked files the user chose to skip, as plan rows that say why. */
+export function skippedLockedResults(locked: InputFile[]): ParseResult[] {
+  return locked.map((file) => ({
+    fileName: file.name,
+    error: new StatementError(
+      'pdf-locked',
+      'password-protected PDF was not unlocked',
+      'Skipped: this PDF is password-protected. Import it again with your details or its password.',
+    ),
+  }));
+}
+
+function parsePdf(fileName: string, pages: PdfPage[]): ParseResult {
+  try {
+    return { fileName, parsed: parsePdfText(fileName, pages) };
+  } catch (error) {
+    return { fileName, error };
+  }
+}
