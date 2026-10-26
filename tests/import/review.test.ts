@@ -8,6 +8,7 @@ import { planImport, type ParseResult } from '../../src/import/plan';
 import type { CommitUserInput } from '../../src/import/commit';
 import {
   importCount,
+  importedNotice,
   planIsComplete,
   questionOwners,
   reviewGroups,
@@ -174,5 +175,28 @@ describe('reviewGroups and importCount', () => {
     expect(groups[0].outcomes).toHaveLength(2);
     expect(groups[0].toImport).toBe(1);
     expect(importCount(outcomes)).toBe(1);
+  });
+});
+
+describe('importedNotice', () => {
+  const result = (statementsWritten: number, cardsCreated: number) => ({
+    statementsWritten,
+    cardsCreated,
+    duplicatesSkipped: 0,
+    duplicatesSuperseded: 0,
+  });
+  it('counts statements and new cards', () => {
+    expect(importedNotice(result(12, 3))).toBe(
+      'Imported 12 statements, 3 new cards.',
+    );
+    expect(importedNotice(result(1, 1))).toBe(
+      'Imported 1 statement, 1 new card.',
+    );
+    expect(importedNotice(result(2, 0))).toBe('Imported 2 statements.');
+  });
+  it('says so when nothing was new', () => {
+    expect(importedNotice(result(0, 0))).toBe(
+      'Nothing new — those statements were already here.',
+    );
   });
 });

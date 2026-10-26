@@ -33,6 +33,9 @@ test('import a statement and see it on the dashboard, with no network', async ({
   await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
 
   await expect(page.locator('.card-grid')).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText(
+    'Imported 1 statement, 1 new card.',
+  );
   await expect(page.getByText('₹12,345.67').first()).toBeVisible();
   expect(offsite).toEqual([]);
 });
@@ -231,4 +234,31 @@ test('review: remove a file, and a missing due day is pointed out', async ({
   await importOne.click();
 
   await expect(page.locator('.card-tile')).toHaveCount(1);
+});
+
+test('a file dropped outside the drop zone is refused; inside, it highlights', async ({
+  page,
+}) => {
+  await page.goto('/');
+  // Outside any drop zone (the dashboard): the browser must not open it.
+  const refused = await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(['x'], 'statement.csv'));
+    const drop = new DragEvent('drop', {
+      dataTransfer: data,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(drop);
+    return drop.defaultPrevented;
+  });
+  expect(refused).toBe(true);
+
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  const zone = page.locator('.dropzone');
+  await zone.dispatchEvent('dragenter');
+  await expect(zone).toHaveClass(/is-dragover/);
+  await expect(zone).toContainText('Drop to read them');
+  await zone.dispatchEvent('dragleave');
+  await expect(zone).not.toHaveClass(/is-dragover/);
 });

@@ -7,7 +7,7 @@ import { useDataVersion } from '../context/DataVersionContext';
 import { getAllCards, getAllStatements } from '../db/db';
 import { planImport, type ParseResult, type FileOutcome } from '../import/plan';
 import { commitImport, type CommitUserInput } from '../import/commit';
-import { withSuggestedNames } from '../import/review';
+import { importedNotice, withSuggestedNames } from '../import/review';
 import {
   readStatementFiles,
   skippedLockedResults,
@@ -61,6 +61,13 @@ function ImportPage({ setView }: ImportPageProps) {
   const { bump } = useDataVersion();
   const [state, setState] = useState<ImportState>({ stage: 'idle' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Files read or unlocked so far, while a step is busy — outside the state
+  // machine: it's display only and changes per file.
+  const [progress, setProgress] = useState<{ done: number; total: number }>();
+  // Counts nested dragenter/dragleave pairs, which fire for every child the
+  // pointer crosses; the zone is "over" while the count is above zero.
+  const dragDepth = useRef(0);
+  const [dragOver, setDragOver] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const heading = {
     idle: 'Import statements',
@@ -101,7 +108,13 @@ function ImportPage({ setView }: ImportPageProps) {
         unreadable.push({ fileName: file.name, error });
       }
     }
-    const read = await readStatementFiles(inputs, readPdfInBrowser);
+    setProgress({ done: 0, total: inputs.length });
+    const read = await readStatementFiles(
+      inputs,
+      readPdfInBrowser,
+      (done, total) => setProgress({ done, total }),
+    );
+    setProgress(undefined);
     setDiagnostics(read.diagnostics);
     const results = [...unreadable, ...read.results];
     if (read.locked.length > 0) {
@@ -125,12 +138,15 @@ function ImportPage({ setView }: ImportPageProps) {
     const knownPatterns = (await getAllCards(db)).flatMap((c) =>
       c.pdfPasswordPattern === undefined ? [] : [c.pdfPasswordPattern],
     );
+    setProgress({ done: 0, total: locked.locked.length });
     const unlocked = await unlockFiles(
       locked.locked,
       input,
       knownPatterns,
       readPdfInBrowser,
+      (done, total) => setProgress({ done, total }),
     );
+    setProgress(undefined);
     const results = [...locked.results, ...unlocked.results];
     const passwordPatterns = new Map([
       ...locked.passwordPatterns,
@@ -178,12 +194,15 @@ function ImportPage({ setView }: ImportPageProps) {
 
   /** A failure mid-read must not leave the page stuck on "Reading…". */
   function recover(error: unknown) {
+    setProgress(undefined);
     setState({ stage: 'idle' });
     reportError(error);
   }
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
     void handleFiles(event.dataTransfer.files).catch(recover);
   }
 
@@ -243,9 +262,13 @@ function ImportPage({ setView }: ImportPageProps) {
   ) {
     setState({ stage: 'committing', results, outcomes, inputs });
     try {
-      await commitImport(db, outcomes, withSuggestedNames(outcomes, inputs));
+      const result = await commitImport(
+        db,
+        outcomes,
+        withSuggestedNames(outcomes, inputs),
+      );
       bump();
-      setView({ name: 'dashboard' });
+      setView({ name: 'dashboard', notice: importedNotice(result) });
     } catch (error) {
       // A commit is several writes, so a failure can leave some of them done
       // (a card created, a statement written). Re-plan against what is in the
@@ -275,11 +298,19 @@ function ImportPage({ setView }: ImportPageProps) {
 
   const dropzone = (
     <div
-      className="dropzone"
+      className={dragOver ? 'dropzone is-dragover' : 'dropzone'}
       onDrop={handleDrop}
       onDragOver={(event) => event.preventDefault()}
+      onDragEnter={() => {
+        dragDepth.current += 1;
+        setDragOver(true);
+      }}
+      onDragLeave={() => {
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) setDragOver(false);
+      }}
     >
-      <p>Drag statement files here, or</p>
+      <p>{dragOver ? 'Drop to read them' : 'Drag statement files here, or'}</p>
       {/* A real button (keyboard-reachable) opening a hidden file input;
           a <label> for a display:none input can't take focus. */}
       <button type="button" onClick={() => fileInputRef.current?.click()}>
@@ -315,7 +346,11 @@ function ImportPage({ setView }: ImportPageProps) {
     return (
       <div>
         {title}
-        <p role="status">Reading files…</p>
+        <p role="status">
+          {progress === undefined || progress.total < 2
+            ? 'Reading files…'
+            : `Reading ${progress.done} of ${progress.total} files…`}
+        </p>
       </div>
     );
   }
@@ -328,6 +363,7 @@ function ImportPage({ setView }: ImportPageProps) {
           fileNames={state.locked.map((f) => f.name)}
           retry={state.retry}
           unlocking={state.unlocking}
+          progress={progress}
           onUnlock={(input) => void handleUnlock(input).catch(recover)}
           onSkip={() => void handleSkipLocked().catch(recover)}
         />

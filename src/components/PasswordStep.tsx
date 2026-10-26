@@ -13,6 +13,8 @@ interface PasswordStepProps {
   /** A previous attempt left these files locked. */
   retry: boolean;
   unlocking: boolean;
+  /** Files tried so far while unlocking. */
+  progress?: { done: number; total: number };
   onUnlock: (input: UnlockInput) => void;
   onSkip: () => void;
 }
@@ -32,6 +34,7 @@ function PasswordStep({
   fileNames,
   retry,
   unlocking,
+  progress,
   onUnlock,
   onSkip,
 }: PasswordStepProps) {
@@ -167,7 +170,11 @@ function PasswordStep({
         )}
         <div className="import-actions">
           <button type="submit" className="primary" disabled={!canSubmit}>
-            {unlocking ? 'Unlocking…' : 'Unlock'}
+            {!unlocking
+              ? 'Unlock'
+              : progress === undefined || progress.total < 2
+                ? 'Unlocking…'
+                : `Unlocking ${progress.done} of ${progress.total}…`}
           </button>
           <button type="button" onClick={onSkip} disabled={unlocking}>
             Skip {count === 1 ? 'this file' : 'these files'}

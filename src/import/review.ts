@@ -6,7 +6,7 @@
 
 import { isValidDueDay } from '../lib/dates';
 import { cardInputKey, type FileOutcome } from './plan';
-import type { CommitUserInput } from './commit';
+import type { CommitResult, CommitUserInput } from './commit';
 
 /** An outcome's own file name, whichever variant it is ('new-statement'
  * keeps it inside `parsed`). */
@@ -134,4 +134,22 @@ export function reviewGroups(outcomes: FileOutcome[]): {
     group.outcomes.sort((a, b) => b.period.localeCompare(a.period));
   }
   return { groups: [...groups.values()], unreadable };
+}
+
+/** The dashboard's confirmation after an import, in plain words.
+ * `statementsWritten` already includes replaced copies. */
+export function importedNotice(result: CommitResult): string {
+  const { statementsWritten, cardsCreated } = result;
+  if (statementsWritten === 0) {
+    return 'Nothing new — those statements were already here.';
+  }
+  const statements =
+    statementsWritten === 1 ? '1 statement' : `${statementsWritten} statements`;
+  const cards =
+    cardsCreated === 0
+      ? ''
+      : cardsCreated === 1
+        ? ', 1 new card'
+        : `, ${cardsCreated} new cards`;
+  return `Imported ${statements}${cards}.`;
 }

@@ -199,3 +199,37 @@ describe('the winning pattern is remembered on the card', () => {
     db.close();
   });
 });
+
+describe('progress', () => {
+  it('reports each file done, ending at total', async () => {
+    const calls: [number, number][] = [];
+    await readStatementFiles(
+      [file('hdfc_style.csv'), file('axis_style.xlsx'), file('legacy.xls')],
+      readPdf,
+      (done, total) => calls.push([done, total]),
+    );
+    expect(calls).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+  });
+
+  it('unlocking reports progress too', async () => {
+    const calls: [number, number][] = [];
+    await unlockFiles(
+      [
+        file('pdf_statement_locked.pdf'),
+        file('pdf_statement_locked.pdf', 'b.pdf'),
+      ],
+      { passwords: [FIXTURE_PASSWORD] },
+      [],
+      readPdf,
+      (done, total) => calls.push([done, total]),
+    );
+    expect(calls).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+});

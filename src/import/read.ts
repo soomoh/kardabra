@@ -36,6 +36,9 @@ export type PdfReader = (
   passwords: string[],
 ) => Promise<{ pages: PdfPage[]; unlockedWith: number | null }>;
 
+/** Called after each file is handled: how many are done, out of how many. */
+export type Progress = (done: number, total: number) => void;
+
 export interface InputFile {
   name: string;
   bytes: Uint8Array;
@@ -54,9 +57,11 @@ export interface ReadResult {
 export async function readStatementFiles(
   files: InputFile[],
   readPdf: PdfReader,
+  onProgress?: Progress,
 ): Promise<ReadResult> {
   const out: ReadResult = { results: [], locked: [], diagnostics: new Map() };
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
+    if (index > 0) onProgress?.(index, files.length);
     if (looksLikePdf(file.bytes)) {
       try {
         const { pages } = await readPdf(file.bytes, []);
@@ -75,6 +80,7 @@ export async function readStatementFiles(
       out.diagnostics.set(file.name, fileDiagnostic(file.bytes));
     }
   }
+  onProgress?.(files.length, files.length);
   return out;
 }
 
@@ -123,13 +129,15 @@ export async function unlockFiles(
   input: UnlockInput,
   knownPatterns: string[],
   readPdf: PdfReader,
+  onProgress?: Progress,
 ): Promise<UnlockResult> {
   const out: UnlockResult = {
     results: [],
     stillLocked: [],
     patterns: new Map(),
   };
-  for (const file of locked) {
+  for (const [index, file] of locked.entries()) {
+    if (index > 0) onProgress?.(index, locked.length);
     const candidates = candidatesFor(file.name, input, knownPatterns);
     if (candidates.length === 0) {
       out.stillLocked.push(file);
@@ -151,6 +159,7 @@ export async function unlockFiles(
       else out.results.push({ fileName: file.name, error });
     }
   }
+  onProgress?.(locked.length, locked.length);
   return out;
 }
 

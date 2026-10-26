@@ -326,6 +326,22 @@ input[type='number']::-webkit-inner-spin-button {
 
 /* --- Dashboard --- */
 
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-2xs) var(--space-2xs) var(--space-2xs) var(--space-md);
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-weight: 600;
+}
+.notice p {
+  margin: 0;
+}
+
 /* The one bold moment on the page: what you owe, and by when. */
 .dashboard-header {
   margin-bottom: var(--space-lg);
@@ -475,6 +491,11 @@ input[type='number']::-webkit-inner-spin-button {
   border-radius: var(--radius-lg);
   background: var(--surface);
   text-align: center;
+}
+.dropzone.is-dragover {
+  border-color: var(--primary);
+  border-style: solid;
+  background: var(--attention-bg);
 }
 .dropzone p {
   margin: 0 0 var(--space-sm);

@@ -21,10 +21,13 @@ import { statementsToCheckByCard } from '../lib/reconcile';
 import CardTile from './CardTile';
 import TrendsChart from './TrendsChart';
 import { useDocumentTitle } from './useDocumentTitle';
+import { XIcon } from './icons';
 import type { View } from '../App';
 
 interface DashboardProps {
   setView: (view: View) => void;
+  /** Shown once on arrival, e.g. what an import just did. */
+  notice?: string;
 }
 
 // A bar appears from the very first import — one month of data is still
@@ -32,7 +35,7 @@ interface DashboardProps {
 // empty gap where the chart belongs, which reads as a bug, not restraint.
 const MIN_STATEMENTS_FOR_TRENDS = 1;
 
-function Dashboard({ setView }: DashboardProps) {
+function Dashboard({ setView, notice }: DashboardProps) {
   const db = useDb();
   const reportError = useReportError();
   const { version, bump } = useDataVersion();
@@ -118,6 +121,22 @@ function Dashboard({ setView }: DashboardProps) {
 
   return (
     <div>
+      {notice !== undefined && (
+        <div className="notice" role="status">
+          <p>{notice}</p>
+          <button
+            className="icon-button"
+            aria-label="Dismiss"
+            onClick={() => {
+              setView({ name: 'dashboard' });
+              // The button disappears; keep focus on the page, not <body>.
+              document.querySelector<HTMLElement>('main')?.focus();
+            }}
+          >
+            <XIcon />
+          </button>
+        </div>
+      )}
       <Headline entries={entries} />
 
       <div className="card-grid">

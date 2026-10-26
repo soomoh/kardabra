@@ -11,7 +11,10 @@ import CardDetail from './components/CardDetail';
 // history stack, no back/forward beyond what each screen wires up itself
 // (e.g. CardDetail's "back to dashboard" link).
 export type View =
-  { name: 'dashboard' } | { name: 'import' } | { name: 'card'; cardId: string };
+  /** `notice`: a one-off confirmation shown on arrival (after an import). */
+  | { name: 'dashboard'; notice?: string }
+  | { name: 'import' }
+  | { name: 'card'; cardId: string };
 
 function App() {
   const [view, setView] = useState<View>({ name: 'dashboard' });
@@ -23,6 +26,25 @@ function App() {
   // previous view rather than a "first render" flag, which StrictMode's
   // double-run of effects would defeat.
   const viewKey = view.name === 'card' ? `card:${view.cardId}` : view.name;
+
+  // A file dropped anywhere but the import drop zone would make the browser
+  // open it and leave the app; refuse such drops.
+  useEffect(() => {
+    function guard(event: DragEvent) {
+      const target = event.target as Element | null;
+      if (target?.closest?.('.dropzone')) return;
+      if (event.dataTransfer?.types.includes('Files')) {
+        event.preventDefault();
+        if (event.type === 'dragover') event.dataTransfer.dropEffect = 'none';
+      }
+    }
+    window.addEventListener('dragover', guard);
+    window.addEventListener('drop', guard);
+    return () => {
+      window.removeEventListener('dragover', guard);
+      window.removeEventListener('drop', guard);
+    };
+  }, []);
   const shownViewKey = useRef(viewKey);
   useEffect(() => {
     if (shownViewKey.current === viewKey) return;
@@ -61,7 +83,9 @@ function App() {
         {/* tabIndex -1: focusable from script (above), not in the Tab order. */}
         <main ref={mainRef} tabIndex={-1} className="app-main">
           <DbProvider>
-            {view.name === 'dashboard' && <Dashboard setView={setView} />}
+            {view.name === 'dashboard' && (
+              <Dashboard setView={setView} notice={view.notice} />
+            )}
             {view.name === 'import' && <ImportPage setView={setView} />}
             {view.name === 'card' && (
               <CardDetail cardId={view.cardId} setView={setView} />
