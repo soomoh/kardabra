@@ -177,3 +177,37 @@ test('passwords alone, without name or date of birth, each tried on every file',
 
   await expect(page.getByText('3 txns')).toBeVisible();
 });
+
+test('keyboard only: choose files, open a card, focus and title follow', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(page).toHaveTitle('Import statements · Kardabra');
+
+  // "Choose files" is reachable by Tab and opens the file picker.
+  const choose = page.getByRole('button', { name: 'Choose files' });
+  await choose.focus();
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.keyboard.press('Enter'),
+  ]);
+  await chooser.setFiles(fixture);
+  await expect(page.getByText('Name this card')).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Import', exact: true })
+    .last()
+    .click();
+
+  // The card's name is a real button: Enter opens it, focus moves to the
+  // new page and the tab title names the card.
+  const open = page.getByRole('button', {
+    name: 'Card ····4321',
+    exact: true,
+  });
+  await open.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
+  await expect(page).toHaveTitle('Card ····4321 · Kardabra');
+  await expect(page.getByRole('main')).toBeFocused();
+});

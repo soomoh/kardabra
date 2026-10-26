@@ -57,6 +57,11 @@ p {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
+/* <main> takes focus only from script, on a view change; the page itself
+   needs no ring. */
+.app-main:focus {
+  outline: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -103,8 +108,7 @@ p {
 
 /* --- Controls --- */
 
-button,
-.button-like {
+button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -122,12 +126,10 @@ button,
     background-color var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
 }
-button:hover,
-.button-like:hover {
+button:hover {
   background: var(--surface);
 }
-button:active,
-.button-like:active {
+button:active {
   transform: translateY(1px);
 }
 button:disabled {
@@ -226,8 +228,8 @@ input[aria-invalid='true'] {
   border-color: var(--danger);
 }
 input[type='checkbox'] {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
   accent-color: var(--primary);
 }
 /* The popup list takes its colours from the option elements themselves
@@ -396,7 +398,49 @@ input[type='number']::-webkit-inner-spin-button {
   margin: calc(-1 * var(--space-xs)) calc(-1 * var(--space-xs)) 0 0;
 }
 .card-nickname {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
   font-weight: 650;
+  letter-spacing: 0;
+}
+/* The tile's open action: a real button whose ::after covers the whole
+   tile, so a click anywhere opens the card. Its focus ring is drawn on
+   that layer, around the tile. */
+.card-open {
+  min-height: 2.25rem;
+  padding: 0;
+  border: none;
+  font-weight: inherit;
+  text-align: left;
+}
+.card-open:hover {
+  background: none;
+}
+/* No press nudge: a transform would make the button the containing block
+   of its ::after, shrinking the click layer mid-click so the click is lost. */
+.card-open:active {
+  transform: none;
+}
+.card-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+}
+.card-open:focus-visible {
+  outline: none;
+}
+.card-open:focus-visible::after {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Everything else on the tile sits above the open layer. */
+.card-tile .tile-actions,
+.card-tile .card-action,
+.card-tile input {
+  position: relative;
+  z-index: 1;
 }
 .card-amount {
   margin: 0;

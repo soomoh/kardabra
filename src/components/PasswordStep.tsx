@@ -113,6 +113,7 @@ function PasswordStep({
             inputMode="numeric"
             value={dobText}
             onChange={(e) => setDobText(e.target.value)}
+            aria-invalid={dobText.trim() !== '' && dob === null}
             placeholder="DD/MM/YYYY"
             autoComplete="off"
           />

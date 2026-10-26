@@ -23,6 +23,7 @@ import CardHeader from './CardHeader';
 import StatementList from './StatementList';
 import StatementTransactions from './StatementTransactions';
 import type { View } from '../App';
+import { useDocumentTitle } from './useDocumentTitle';
 
 interface CardDetailProps {
   cardId: string;
@@ -40,6 +41,7 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // The card was deleted (another tab) or the id is stale.
   const [missing, setMissing] = useState(false);
+  useDocumentTitle(missing ? 'Card not found' : (card?.nickname ?? null));
 
   useEffect(() => {
     let cancelled = false;

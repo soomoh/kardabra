@@ -18,6 +18,7 @@ import { formatINR } from '../lib/money';
 import { cycleKey, monthlyTrends, type MonthlyTrends } from '../lib/trends';
 import CardTile from './CardTile';
 import TrendsChart from './TrendsChart';
+import { useDocumentTitle } from './useDocumentTitle';
 import type { View } from '../App';
 
 interface DashboardProps {
@@ -36,6 +37,7 @@ function Dashboard({ setView }: DashboardProps) {
   const [entries, setEntries] = useState<CardWithCycle[] | null>(null);
   const [trends, setTrends] = useState<MonthlyTrends | null>(null);
   const [statementCount, setStatementCount] = useState(0);
+  useDocumentTitle('Dashboard');
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +91,7 @@ function Dashboard({ setView }: DashboardProps) {
   }
 
   if (entries === null) {
-    return <p>Loading…</p>;
+    return <p role="status">Loading…</p>;
   }
 
   if (entries.length === 0) {

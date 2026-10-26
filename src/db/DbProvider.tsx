@@ -79,7 +79,7 @@ export function DbProvider({ children }: { children: ReactNode }) {
       error: state.status === 'error' ? state.message : '',
     }[state.status];
     return (
-      <main
+      <div
         className="db-status"
         role={state.status === 'opening' ? 'status' : 'alert'}
       >
@@ -87,7 +87,7 @@ export function DbProvider({ children }: { children: ReactNode }) {
         {state.status === 'reload' && (
           <button onClick={() => window.location.reload()}>Reload</button>
         )}
-      </main>
+      </div>
     );
   }
 

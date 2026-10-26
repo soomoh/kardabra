@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { describeDbError, useDb, useReportError } from '../db/DbProvider';
 import PasswordStep from './PasswordStep';
@@ -17,6 +17,7 @@ import {
 } from '../import/read';
 import { readPdfInBrowser } from '../import/browserPdf';
 import type { View } from '../App';
+import { useDocumentTitle } from './useDocumentTitle';
 
 interface ImportPageProps {
   setView: (view: View) => void;
@@ -59,6 +60,8 @@ function ImportPage({ setView }: ImportPageProps) {
   const reportError = useReportError();
   const { bump } = useDataVersion();
   const [state, setState] = useState<ImportState>({ stage: 'idle' });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  useDocumentTitle('Import statements');
   // Number-masked diagnostics for files that couldn't be parsed, keyed by file
   // name — kept beside the plan (not in the state machine) since they're only
   // read when building a report. Overwritten on each new batch.
@@ -236,15 +239,18 @@ function ImportPage({ setView }: ImportPageProps) {
       onDragOver={(event) => event.preventDefault()}
     >
       <p>Drag statement files here, or</p>
-      <label className="button-like" htmlFor="statement-file-input">
+      {/* A real button (keyboard-reachable) opening a hidden file input;
+          a <label> for a display:none input can't take focus. */}
+      <button type="button" onClick={() => fileInputRef.current?.click()}>
         Choose files
-      </label>
+      </button>
       <input
+        ref={fileInputRef}
         id="statement-file-input"
         type="file"
         multiple
         onChange={handleFileInputChange}
-        style={{ display: 'none' }}
+        hidden
       />
     </div>
   );

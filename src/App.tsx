@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DataVersionProvider } from './context/DataVersionContext';
 import { DbProvider } from './db/DbProvider';
 import Dashboard from './components/Dashboard';
@@ -15,6 +15,21 @@ export type View =
 
 function App() {
   const [view, setView] = useState<View>({ name: 'dashboard' });
+  const mainRef = useRef<HTMLElement>(null);
+
+  // On every view change (not the first load), move keyboard and
+  // screen-reader focus to the new page, so it's announced and Tab starts
+  // from its top instead of the old page's position. Compared with the
+  // previous view rather than a "first render" flag, which StrictMode's
+  // double-run of effects would defeat.
+  const viewKey = view.name === 'card' ? `card:${view.cardId}` : view.name;
+  const shownViewKey = useRef(viewKey);
+  useEffect(() => {
+    if (shownViewKey.current === viewKey) return;
+    shownViewKey.current = viewKey;
+    mainRef.current?.focus();
+    window.scrollTo(0, 0);
+  }, [viewKey]);
 
   // Persistent top nav: every view can always reach Dashboard and Import,
   // so changing your mind mid-flow never leaves you stranded.
@@ -22,7 +37,7 @@ function App() {
   // off it too, so the highlight can't disagree with what a screen
   // reader announces.
   const nav = (
-    <nav className="app-nav">
+    <nav className="app-nav" aria-label="Main">
       <span className="app-nav-brand">Kardabra</span>
       <button
         onClick={() => setView({ name: 'dashboard' })}
@@ -42,14 +57,17 @@ function App() {
   return (
     <DataVersionProvider>
       <div className="app">
-        {nav}
-        <DbProvider>
-          {view.name === 'dashboard' && <Dashboard setView={setView} />}
-          {view.name === 'import' && <ImportPage setView={setView} />}
-          {view.name === 'card' && (
-            <CardDetail cardId={view.cardId} setView={setView} />
-          )}
-        </DbProvider>
+        <header>{nav}</header>
+        {/* tabIndex -1: focusable from script (above), not in the Tab order. */}
+        <main ref={mainRef} tabIndex={-1} className="app-main">
+          <DbProvider>
+            {view.name === 'dashboard' && <Dashboard setView={setView} />}
+            {view.name === 'import' && <ImportPage setView={setView} />}
+            {view.name === 'card' && (
+              <CardDetail cardId={view.cardId} setView={setView} />
+            )}
+          </DbProvider>
+        </main>
       </div>
     </DataVersionProvider>
   );

@@ -126,7 +126,9 @@ function ImportReview({
       )}
 
       {!committing && commitError !== undefined && (
-        <p className="error-text">Import failed: {commitError}</p>
+        <p className="error-text" role="alert">
+          Import failed: {commitError}
+        </p>
       )}
 
       <div className="import-actions">

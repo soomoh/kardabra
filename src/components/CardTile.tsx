@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { MouseEvent } from 'react';
 import type { CardRecord, CycleRecord } from '../db/schema';
 import { formatINR } from '../lib/money';
 import { dueStatus } from '../lib/dueStatus';
@@ -48,13 +47,6 @@ function CardTile({
   const [mode, setMode] = useState<TileMode>({ kind: 'normal' });
   const status = cycle === null ? null : dueStatus(todayISO(), cycle);
 
-  // Buttons inside the tile must not also trigger the tile's own
-  // click-to-open — every handler below stops propagation first.
-  function handleToggleClick(event: MouseEvent) {
-    event.stopPropagation();
-    onTogglePaid();
-  }
-
   function saveRename() {
     if (mode.kind !== 'renaming') return;
     const trimmed = mode.draft.trim();
@@ -74,35 +66,20 @@ function CardTile({
           the files brings everything back.
         </p>
         <div className="import-actions card-action">
-          <button
-            className="danger"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
+          <button className="danger" onClick={() => onDelete()}>
             Delete
           </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setMode({ kind: 'normal' });
-            }}
-          >
-            Cancel
-          </button>
+          <button onClick={() => setMode({ kind: 'normal' })}>Cancel</button>
         </div>
       </div>
     );
   }
 
+  // Not a clickable <div>: the card's name is a real button, stretched over
+  // the tile in CSS (.card-open::after) so a click anywhere opens it. The
+  // other buttons sit above that layer, siblings rather than nested.
   return (
-    <div
-      className="card-tile"
-      onClick={mode.kind === 'normal' ? onOpen : undefined}
-      role="button"
-      tabIndex={0}
-    >
+    <div className="card-tile">
       <div className="card-tile-header">
         {mode.kind === 'renaming' ? (
           <input
@@ -116,31 +93,28 @@ function CardTile({
               if (e.key === 'Escape') setMode({ kind: 'normal' });
             }}
             onBlur={saveRename}
-            onClick={(e) => e.stopPropagation()}
             aria-label={`Nickname for ${card.nickname}`}
             autoFocus
           />
         ) : (
-          <span className="card-nickname">{card.nickname}</span>
+          <h2 className="card-nickname">
+            <button type="button" className="card-open" onClick={onOpen}>
+              {card.nickname}
+            </button>
+          </h2>
         )}
         <span className="tile-actions">
           <button
             className="icon-button"
             aria-label={`Rename ${card.nickname}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMode({ kind: 'renaming', draft: card.nickname });
-            }}
+            onClick={() => setMode({ kind: 'renaming', draft: card.nickname })}
           >
             <PencilIcon />
           </button>
           <button
             className="icon-button"
             aria-label={`Delete ${card.nickname}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMode({ kind: 'confirming-delete' });
-            }}
+            onClick={() => setMode({ kind: 'confirming-delete' })}
           >
             <TrashIcon />
           </button>
@@ -185,7 +159,7 @@ function CardTile({
           spot on every tile regardless of how much content is above. */}
       {cycle !== null &&
         (cycleNeedsPayment(cycle) || cycle.paidAt !== undefined) && (
-          <button className="card-action" onClick={handleToggleClick}>
+          <button className="card-action" onClick={onTogglePaid}>
             {cycle.paidAt === undefined ? 'Mark paid' : 'Undo'}
           </button>
         )}
