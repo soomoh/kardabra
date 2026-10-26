@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { parseDob } from '../lib/pdfPassword';
-import { BANK_NAMES, bankFromFileName } from '../lib/bankDetect';
+import {
+  BANK_NAMES,
+  bankFromFileName,
+  statementsSummary,
+} from '../lib/bankDetect';
 import type { UnlockInput } from '../import/read';
 
 interface PasswordStepProps {
@@ -36,6 +40,13 @@ function PasswordStep({
   const [last4Text, setLast4Text] = useState('');
   const [passwords, setPasswords] = useState<string[]>(['']);
   const [wantsPasswords, setWantsPasswords] = useState(false);
+  const last4Ref = useRef<HTMLInputElement>(null);
+
+  // A retry reveals the last-4 field: move focus to it so the new question
+  // is noticed (and announced), not just appended below the fold.
+  useEffect(() => {
+    if (retry) last4Ref.current?.focus();
+  }, [retry]);
 
   const dob = parseDob(dobText);
   const hasDetails = name.trim() !== '' && dob !== null;
@@ -65,34 +76,12 @@ function PasswordStep({
   const count = fileNames.length;
   return (
     <section>
-      <h2>Unlock your statements</h2>
-      {retry ? (
-        <p role="alert">
-          Almost there — {count === 1 ? 'one file is' : `${count} files are`}{' '}
-          still locked. Some banks, like SBI, also use your card's last 4
-          digits. Add them below, or enter the password if you know it.
-        </p>
-      ) : (
-        <p>
-          Banks lock statements with a password, usually made from your name and
-          date of birth. Enter them once and we'll unlock{' '}
-          {count === 1 ? 'it' : `all ${count}`} for you. Nothing you type is
-          saved, and it never leaves this device.
-        </p>
-      )}
-      <ul className="plan-list">
-        {fileNames.map((fileName) => {
-          const bank = bankFromFileName(fileName);
-          return (
-            <li key={fileName} className="plan-row">
-              <div className="plan-row-file">{fileName}</div>
-              {bank && (
-                <div className="plan-row-details">{BANK_NAMES[bank]}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <p className="lede">
+        Banks lock statements with a password, usually made from your name and
+        date of birth. Enter them once and we'll unlock{' '}
+        {count === 1 ? 'it' : `all ${count}`} for you. Nothing you type is
+        saved, and it never leaves this device.
+      </p>
       <form className="password-form" onSubmit={submit}>
         <label>
           Name as on your card
@@ -119,17 +108,29 @@ function PasswordStep({
           />
         </label>
         {retry && (
-          <label>
-            Card's last 4 digits
-            <input
-              type="text"
-              inputMode="numeric"
-              value={last4Text}
-              onChange={(e) => setLast4Text(e.target.value)}
-              placeholder="e.g. 4242 — more than one card? add them all"
-              autoComplete="off"
-            />
-          </label>
+          <div className="callout">
+            <p role="alert">
+              {count === 1 ? 'One file is' : `${count} files are`} still locked.
+              Some banks, like SBI, also use your card's last 4 digits. Add
+              them, or enter the password if you know it.
+            </p>
+            <label>
+              Card's last 4 digits
+              <input
+                ref={last4Ref}
+                type="text"
+                inputMode="numeric"
+                value={last4Text}
+                onChange={(e) => setLast4Text(e.target.value)}
+                placeholder="4242"
+                aria-describedby="last4-hint"
+                autoComplete="off"
+              />
+              <span id="last4-hint" className="field-hint">
+                More than one card? Add them all, separated by spaces.
+              </span>
+            </label>
+          </div>
         )}
         {showPasswords ? (
           <fieldset className="password-list">
@@ -165,14 +166,31 @@ function PasswordStep({
           </button>
         )}
         <div className="import-actions">
-          <button type="button" onClick={onSkip} disabled={unlocking}>
-            Skip {count === 1 ? 'this file' : 'these files'}
-          </button>
           <button type="submit" className="primary" disabled={!canSubmit}>
             {unlocking ? 'Unlocking…' : 'Unlock'}
           </button>
+          <button type="button" onClick={onSkip} disabled={unlocking}>
+            Skip {count === 1 ? 'this file' : 'these files'}
+          </button>
         </div>
       </form>
+      <details className="file-summary">
+        <summary>
+          {retry ? 'Still locked: ' : ''}
+          {statementsSummary(fileNames)}
+        </summary>
+        <ul className="plain-list">
+          {fileNames.map((fileName) => {
+            const bank = bankFromFileName(fileName);
+            return (
+              <li key={fileName}>
+                {fileName}
+                {bank && <span className="muted"> · {BANK_NAMES[bank]}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      </details>
     </section>
   );
 }

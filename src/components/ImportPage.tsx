@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { describeDbError, useDb, useReportError } from '../db/DbProvider';
 import PasswordStep from './PasswordStep';
@@ -61,7 +61,25 @@ function ImportPage({ setView }: ImportPageProps) {
   const { bump } = useDataVersion();
   const [state, setState] = useState<ImportState>({ stage: 'idle' });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  useDocumentTitle('Import statements');
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const heading = {
+    idle: 'Import statements',
+    reading: 'Import statements',
+    locked: 'Unlock your statements',
+    planned: 'Review and import',
+    committing: 'Review and import',
+  }[state.stage];
+  useDocumentTitle(heading);
+
+  // Each step of the import is announced: focus moves to its heading when
+  // the step changes (the first step is reached via the app's own focus
+  // move to <main>).
+  const shownHeading = useRef(heading);
+  useEffect(() => {
+    if (shownHeading.current === heading) return;
+    shownHeading.current = heading;
+    headingRef.current?.focus();
+  }, [heading]);
   // Number-masked diagnostics for files that couldn't be parsed, keyed by file
   // name — kept beside the plan (not in the state machine) since they're only
   // read when building a report. Overwritten on each new batch.
@@ -175,6 +193,29 @@ function ImportPage({ setView }: ImportPageProps) {
     event.target.value = ''; // allow re-selecting the same file(s) again
   }
 
+  /** Drop one file from the batch and plan again, so in-batch duplicate
+   * choices and question owners follow (answers already typed are kept —
+   * they're keyed by card, not file). Removing the last file starts over. */
+  async function handleRemove(fileName: string) {
+    if (state.stage !== 'planned') return;
+    const results = state.results.filter((r) => r.fileName !== fileName);
+    if (results.length === 0) {
+      setState({ stage: 'idle' });
+      return;
+    }
+    const outcomes = planImport(
+      results,
+      await getAllCards(db),
+      await getAllStatements(db),
+    );
+    // Functional update: answers typed while the database was read stay.
+    setState((current) =>
+      current.stage === 'planned'
+        ? { ...current, results, outcomes, commitError: undefined }
+        : current,
+    );
+  }
+
   function updateNickname(key: string, value: string) {
     if (state.stage !== 'planned') return;
     const nicknames = new Map(state.inputs.nicknames);
@@ -255,10 +296,16 @@ function ImportPage({ setView }: ImportPageProps) {
     </div>
   );
 
+  const title = (
+    <h1 ref={headingRef} tabIndex={-1} className="page-heading">
+      {heading}
+    </h1>
+  );
+
   if (state.stage === 'idle') {
     return (
       <div>
-        <h1>Import statements</h1>
+        {title}
         {dropzone}
       </div>
     );
@@ -267,7 +314,7 @@ function ImportPage({ setView }: ImportPageProps) {
   if (state.stage === 'reading') {
     return (
       <div>
-        <h1>Import statements</h1>
+        {title}
         <p role="status">Reading files…</p>
       </div>
     );
@@ -276,7 +323,7 @@ function ImportPage({ setView }: ImportPageProps) {
   if (state.stage === 'locked') {
     return (
       <div>
-        <h1>Import statements</h1>
+        {title}
         <PasswordStep
           fileNames={state.locked.map((f) => f.name)}
           retry={state.retry}
@@ -290,20 +337,23 @@ function ImportPage({ setView }: ImportPageProps) {
 
   const { results, outcomes, inputs } = state;
   return (
-    <ImportReview
-      outcomes={outcomes}
-      inputs={inputs}
-      committing={state.stage === 'committing'}
-      commitError={state.stage === 'planned' ? state.commitError : undefined}
-      diagnostics={diagnostics}
-      dropzone={dropzone}
-      onNickname={updateNickname}
-      onDueDay={updateDueDay}
-      onStartOver={() => setState({ stage: 'idle' })}
-      onCommit={() =>
-        void handleCommit(results, outcomes, inputs).catch(reportError)
-      }
-    />
+    <div>
+      {title}
+      <ImportReview
+        outcomes={outcomes}
+        inputs={inputs}
+        committing={state.stage === 'committing'}
+        commitError={state.stage === 'planned' ? state.commitError : undefined}
+        diagnostics={diagnostics}
+        onNickname={updateNickname}
+        onDueDay={updateDueDay}
+        onRemove={(fileName) => void handleRemove(fileName).catch(reportError)}
+        onCancel={() => setState({ stage: 'idle' })}
+        onCommit={() =>
+          void handleCommit(results, outcomes, inputs).catch(reportError)
+        }
+      />
+    </div>
   );
 }
 

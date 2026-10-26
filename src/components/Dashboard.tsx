@@ -5,6 +5,7 @@ import {
   getAllCards,
   getAllStatements,
   getAllCycles,
+  getAllTransactions,
   setCyclePaid,
   putCard,
   deleteCardCascade,
@@ -16,6 +17,7 @@ import { actionableCycle, cycleNeedsPayment } from '../lib/cycles';
 import { formatDateLabel, todayISO } from '../lib/dates';
 import { formatINR } from '../lib/money';
 import { cycleKey, monthlyTrends, type MonthlyTrends } from '../lib/trends';
+import { statementsToCheckByCard } from '../lib/reconcile';
 import CardTile from './CardTile';
 import TrendsChart from './TrendsChart';
 import { useDocumentTitle } from './useDocumentTitle';
@@ -37,16 +39,18 @@ function Dashboard({ setView }: DashboardProps) {
   const [entries, setEntries] = useState<CardWithCycle[] | null>(null);
   const [trends, setTrends] = useState<MonthlyTrends | null>(null);
   const [statementCount, setStatementCount] = useState(0);
+  const [toCheck, setToCheck] = useState<Map<string, number>>(new Map());
   useDocumentTitle('Dashboard');
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      const [cards, statements, cycles] = await Promise.all([
+      const [cards, statements, cycles, transactions] = await Promise.all([
         getAllCards(db),
         getAllStatements(db),
         getAllCycles(db),
+        getAllTransactions(db),
       ]);
       if (cancelled) return;
       const loaded = cards.map((card) => ({
@@ -64,6 +68,7 @@ function Dashboard({ setView }: DashboardProps) {
       );
       setEntries(loaded);
       setStatementCount(statements.length);
+      setToCheck(statementsToCheckByCard(statements, transactions));
       setTrends(monthlyTrends(cards, cycles, unpaidKeys));
     })().catch(reportError);
 
@@ -121,6 +126,7 @@ function Dashboard({ setView }: DashboardProps) {
             key={card.id}
             card={card}
             cycle={cycle}
+            statementsToCheck={toCheck.get(card.id) ?? 0}
             onOpen={() => setView({ name: 'card', cardId: card.id })}
             onTogglePaid={() => {
               if (cycle !== null)

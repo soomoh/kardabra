@@ -81,3 +81,57 @@ export function withSuggestedNames(
   }
   return { ...inputs, nicknames };
 }
+
+/** How many statements pressing Import will write: every new statement,
+ * plus duplicates that replace a thinner stored copy. */
+export function importCount(outcomes: FileOutcome[]): number {
+  return outcomes.filter(
+    (o) =>
+      o.kind === 'new-statement' || (o.kind === 'duplicate' && o.supersedes),
+  ).length;
+}
+
+type CardOutcome = Extract<
+  FileOutcome,
+  { kind: 'new-statement' | 'duplicate' }
+>;
+
+/** One card's files in the review: grouped so a big batch reads as a few
+ * cards, not dozens of rows. `key` is the card's cardInputKey. */
+export interface ReviewGroup {
+  key: string;
+  cardRef: CardOutcome['cardRef'];
+  /** Newest period first. */
+  outcomes: CardOutcome[];
+  /** Statements in this group that Import will write. */
+  toImport: number;
+}
+
+/** The review's layout: statements grouped by card (in order of first
+ * appearance), and the files that couldn't be read. */
+export function reviewGroups(outcomes: FileOutcome[]): {
+  groups: ReviewGroup[];
+  unreadable: Extract<FileOutcome, { kind: 'rejected' | 'failed' }>[];
+} {
+  const groups = new Map<string, ReviewGroup>();
+  const unreadable: Extract<FileOutcome, { kind: 'rejected' | 'failed' }>[] =
+    [];
+  for (const outcome of outcomes) {
+    if (outcome.kind === 'rejected' || outcome.kind === 'failed') {
+      unreadable.push(outcome);
+      continue;
+    }
+    const key = cardInputKey(outcome.cardRef, outcomeFileName(outcome));
+    let group = groups.get(key);
+    if (group === undefined) {
+      group = { key, cardRef: outcome.cardRef, outcomes: [], toImport: 0 };
+      groups.set(key, group);
+    }
+    group.outcomes.push(outcome);
+    group.toImport += importCount([outcome]);
+  }
+  for (const group of groups.values()) {
+    group.outcomes.sort((a, b) => b.period.localeCompare(a.period));
+  }
+  return { groups: [...groups.values()], unreadable };
+}

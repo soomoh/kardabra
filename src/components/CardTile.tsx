@@ -9,6 +9,8 @@ import { PencilIcon, TrashIcon } from './icons';
 interface CardTileProps {
   card: CardRecord;
   cycle: CycleRecord | null;
+  /** Statements whose rows don't add up or had rows skipped. */
+  statementsToCheck: number;
   onOpen: () => void;
   onTogglePaid: () => void;
   onRename: (nickname: string) => void;
@@ -39,6 +41,7 @@ type TileMode =
 function CardTile({
   card,
   cycle,
+  statementsToCheck,
   onOpen,
   onTogglePaid,
   onRename,
@@ -149,6 +152,14 @@ function CardTile({
             )}
             {status.label}
           </span>
+        </p>
+      )}
+
+      {statementsToCheck > 0 && (
+        <p className="tile-flag">
+          {statementsToCheck === 1
+            ? '1 statement to check'
+            : `${statementsToCheck} statements to check`}
         </p>
       )}
 

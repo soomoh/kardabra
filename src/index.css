@@ -505,7 +505,6 @@ input[type='number']::-webkit-inner-spin-button {
   gap: var(--space-xs) var(--space-md);
   color: var(--ink-muted);
 }
-.nickname-field,
 .field {
   display: flex;
   flex-direction: column;
@@ -514,7 +513,6 @@ input[type='number']::-webkit-inner-spin-button {
   font-size: var(--text-sm);
   font-weight: 600;
 }
-.nickname-field input,
 .field input {
   font-size: var(--text-base);
   font-weight: 400;
@@ -557,6 +555,156 @@ input[type='number']::-webkit-inner-spin-button {
 }
 .password-form .link-button {
   align-self: flex-start;
+}
+
+/* Page headings take focus from script when a step changes; no ring. */
+h1[tabindex='-1']:focus {
+  outline: none;
+}
+.lede {
+  max-width: 40rem;
+  margin: 0 0 var(--space-lg);
+}
+.field-hint {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.input-short {
+  width: 6rem;
+}
+.plain-list {
+  margin: var(--space-xs) 0 0;
+  padding-left: var(--space-lg);
+}
+
+/* Anything that needs the user's answer: set apart from the list around it. */
+.callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 2px solid var(--attention);
+  border-radius: var(--radius-md);
+  background: var(--attention-bg);
+  color: var(--attention-ink);
+}
+.callout p {
+  margin: 0;
+  font-weight: 600;
+}
+.callout label,
+.callout .field {
+  color: var(--ink);
+}
+.callout .field-hint {
+  color: var(--attention-ink);
+}
+.callout .field-hint.error-text {
+  color: var(--danger);
+}
+
+.file-summary {
+  margin-top: var(--space-lg);
+}
+.file-summary summary,
+.review-group summary {
+  cursor: pointer;
+}
+.file-summary summary {
+  min-height: 1.5rem;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+/* Import review: one collapsible group per card. */
+.review-group {
+  margin-bottom: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.review-group > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-sm);
+  min-height: 2.5rem;
+  padding: var(--space-2xs) 0;
+}
+.review-group > summary::marker {
+  color: var(--ink-muted);
+}
+.review-group-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+.review-group[open] > summary {
+  margin-bottom: var(--space-sm);
+}
+.review-group .callout,
+.group-field {
+  margin-bottom: var(--space-sm);
+}
+.group-field input {
+  max-width: 24rem;
+}
+.review-group .plan-row {
+  background: var(--paper);
+}
+.plan-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.plan-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.plan-row.skipped .plan-row-file {
+  color: var(--ink-muted);
+}
+.report-offer {
+  margin-top: var(--space-sm);
+}
+.report-offer p {
+  margin: 0 0 var(--space-xs);
+}
+
+/* Import stays in view however long the list: the review isn't done until
+   it's pressed. */
+.review-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: var(--space-md) calc(-1 * var(--space-md)) 0;
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.review-actions p {
+  margin: 0 0 var(--space-xs);
+}
+.review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+
+.tile-flag {
+  margin: 0;
+  color: var(--attention-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.badge-attention {
+  border-color: var(--attention);
+  background: var(--attention-bg);
+  color: var(--attention-ink);
 }
 
 /* --- Card detail --- */

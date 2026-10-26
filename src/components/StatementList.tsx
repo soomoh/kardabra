@@ -6,6 +6,7 @@ import type {
 import { formatINR } from '../lib/money';
 import { billUnderpaid, priorExpectedDue, sumOfCredits } from '../lib/spend';
 import { chargeTotals } from '../lib/charges';
+import { statementNeedsCheck } from '../lib/reconcile';
 import { formatDateLabel, formatPeriodLabel } from '../lib/dates';
 
 interface StatementListProps {
@@ -66,6 +67,13 @@ function StatementList({
                   <span className="statement-period">
                     {formatPeriodLabel(statement.period)}
                   </span>
+                  {statementNeedsCheck(
+                    statement,
+                    stmtTxns,
+                    statement.skippedRows ?? 0,
+                  ) && (
+                    <span className="badge badge-attention">Check totals</span>
+                  )}
                   <span>{statement.fileName}</span>
                   <span>{statement.txnCount} txns</span>
                   <span className="amount">Spend {formatINR(spend)}</span>

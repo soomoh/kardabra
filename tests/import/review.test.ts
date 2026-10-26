@@ -7,8 +7,10 @@ import { describe, expect, it } from 'vitest';
 import { planImport, type ParseResult } from '../../src/import/plan';
 import type { CommitUserInput } from '../../src/import/commit';
 import {
+  importCount,
   planIsComplete,
   questionOwners,
+  reviewGroups,
   withSuggestedNames,
 } from '../../src/import/review';
 import { feedbackEntriesFor } from '../../src/import/feedback';
@@ -129,5 +131,48 @@ it('statements of a card showing two digits group into one card', () => {
   const [jan] = outcomes;
   expect(jan.kind === 'new-statement' && jan.cardRef).toMatchObject({
     suggestedNickname: 'Card ····34',
+  });
+});
+
+describe('reviewGroups and importCount', () => {
+  it('groups statements by card, newest first, and counts what Import writes', () => {
+    const outcomes = planImport(
+      [
+        file('a-sep.csv', '1111', '2025-09-13', '2025-10-02'),
+        file('b-oct.csv', '2222', '2025-10-13', '2025-11-02'),
+        file('a-oct.csv', '1111', '2025-10-13', '2025-11-02'),
+        {
+          fileName: 'junk.csv',
+          error: new StatementError('no-table', 'x', 'y'),
+        },
+      ],
+      [],
+      [],
+    );
+    const { groups, unreadable } = reviewGroups(outcomes);
+    expect(groups.map((g) => g.key)).toEqual(['1111', '2222']);
+    expect(groups[0].outcomes.map((o) => o.period)).toEqual([
+      '2025-10',
+      '2025-09',
+    ]);
+    expect(groups.map((g) => g.toImport)).toEqual([2, 1]);
+    expect(unreadable.map((o) => o.kind)).toEqual(['rejected']);
+    expect(importCount(outcomes)).toBe(3);
+  });
+
+  it('an in-batch duplicate is grouped with its card but not counted', () => {
+    const outcomes = planImport(
+      [
+        file('one.csv', '1111', '2025-10-13', '2025-11-02'),
+        file('copy.csv', '1111', '2025-10-13', '2025-11-02'),
+      ],
+      [],
+      [],
+    );
+    const { groups } = reviewGroups(outcomes);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].outcomes).toHaveLength(2);
+    expect(groups[0].toImport).toBe(1);
+    expect(importCount(outcomes)).toBe(1);
   });
 });

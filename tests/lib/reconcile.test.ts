@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reconcile } from '../../src/lib/reconcile';
+import { reconcile, statementNeedsCheck } from '../../src/lib/reconcile';
 
 const debit = (n: number) => ({ amount: -n });
 const credit = (n: number) => ({ amount: n });
@@ -136,4 +136,20 @@ it('still warns on a possible credit opening with nothing to confirm it', () => 
   expect(
     reconcile({ openingBalance: 500, totalDue: 500 }, [{ amount: -1000 }]),
   ).toMatchObject({ status: 'mismatch' });
+});
+
+describe('statementNeedsCheck', () => {
+  const summary = { openingBalance: 0, totalDue: 100 };
+  it('flags a totals mismatch', () => {
+    expect(statementNeedsCheck(summary, [{ amount: -50 }], 0)).toBe(true);
+  });
+  it('flags skipped rows even when totals match', () => {
+    expect(statementNeedsCheck(summary, [{ amount: -100 }], 2)).toBe(true);
+  });
+  it('a statement that adds up, with nothing skipped, is fine', () => {
+    expect(statementNeedsCheck(summary, [{ amount: -100 }], 0)).toBe(false);
+  });
+  it('nothing to check against is not a flag', () => {
+    expect(statementNeedsCheck({}, [{ amount: -100 }], 0)).toBe(false);
+  });
 });

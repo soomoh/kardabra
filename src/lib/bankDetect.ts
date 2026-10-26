@@ -65,3 +65,17 @@ export function bankFromFileName(fileName: string): Bank | null {
   const bin = /(\d{4})[Xx*]+\d{2,4}/.exec(base)?.[1];
   return (bin && BIN_PREFIXES[bin]) || null;
 }
+
+/** The locked-files summary line: "68 statements from 5 banks", "1
+ * statement from SBI Card", or just "3 statements" when any file's bank
+ * can't be told from its name. */
+export function statementsSummary(fileNames: string[]): string {
+  const count = fileNames.length;
+  const noun = count === 1 ? '1 statement' : `${count} statements`;
+  const banks = fileNames.map(bankFromFileName);
+  if (count === 0 || banks.includes(null)) return noun;
+  const distinct = [...new Set(banks)] as Bank[];
+  return distinct.length === 1
+    ? `${noun} from ${BANK_NAMES[distinct[0]]}`
+    : `${noun} from ${distinct.length} banks`;
+}

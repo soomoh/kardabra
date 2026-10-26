@@ -86,3 +86,43 @@ export function reconcile(
         : 'unclear';
   return { status: 'mismatch', expectedClosing, computedClosing, likely };
 }
+
+/** A stored statement worth a second look: its rows don't add up to its
+ * own totals, or rows were skipped while reading it. Drives the dashboard's
+ * "statement to check" flag; TotalsWarning says what's wrong. */
+export function statementNeedsCheck(
+  summary: StatementSummary,
+  transactions: { amount: number }[],
+  skippedRows: number,
+): boolean {
+  return (
+    reconcile(summary, transactions).status === 'mismatch' || skippedRows > 0
+  );
+}
+
+/** Per card, how many of its statements need a check (statementNeedsCheck).
+ * Cards with none are absent. */
+export function statementsToCheckByCard(
+  statements: (StatementSummary & {
+    id: string;
+    cardId: string;
+    skippedRows?: number;
+  })[],
+  transactions: { statementId: string; amount: number }[],
+): Map<string, number> {
+  const byStatement = new Map<string, { amount: number }[]>();
+  for (const txn of transactions) {
+    const list = byStatement.get(txn.statementId) ?? [];
+    list.push(txn);
+    byStatement.set(txn.statementId, list);
+  }
+  const counts = new Map<string, number>();
+  for (const s of statements) {
+    if (
+      statementNeedsCheck(s, byStatement.get(s.id) ?? [], s.skippedRows ?? 0)
+    ) {
+      counts.set(s.cardId, (counts.get(s.cardId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}

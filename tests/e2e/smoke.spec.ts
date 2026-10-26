@@ -26,14 +26,11 @@ test('import a statement and see it on the dashboard, with no network', async ({
 
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   await page.locator('#statement-file-input').setInputFiles(fixture);
-  await expect(page.getByText('Name this card')).toBeVisible();
+  await expect(page.getByLabel('Card name')).toBeVisible();
   // The statement prints its due date, so nothing is asked: Import is ready.
   await expect(page.getByText('due 02-11-2025')).toBeVisible();
   await expect(page.getByRole('spinbutton')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'Import', exact: true })
-    .last()
-    .click();
+  await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
 
   await expect(page.locator('.card-grid')).toBeVisible();
   await expect(page.getByText('₹12,345.67').first()).toBeVisible();
@@ -46,11 +43,8 @@ test('card page: statements, transactions, fix payment, rename, fee', async ({
   await page.goto('/');
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   await page.locator('#statement-file-input').setInputFiles(fixture);
-  await expect(page.getByText('Name this card')).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Import', exact: true })
-    .last()
-    .click();
+  await expect(page.getByLabel('Card name')).toBeVisible();
+  await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
   await page.locator('.card-tile').first().click();
 
   await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
@@ -111,15 +105,12 @@ test('unlock a password-protected PDF with cardholder details, with no network',
   await page.getByLabel(/Date of birth/).fill('20/10/1990');
   await page.getByRole('button', { name: 'Unlock' }).click();
 
-  await expect(page.getByText('Name this card')).toBeVisible();
-  await expect(page.getByText('3 txns')).toBeVisible();
+  await expect(page.getByLabel('Card name')).toBeVisible();
+  await expect(page.getByText('3 transactions')).toBeVisible();
   await expect(page.getByText('due 09-11-2025')).toBeVisible();
   // A name left blank takes the suggestion shown as its placeholder.
   await expect(page.getByPlaceholder('Card ····4242')).toHaveValue('');
-  await page
-    .getByRole('button', { name: 'Import', exact: true })
-    .last()
-    .click();
+  await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
 
   await expect(page.locator('.card-grid')).toBeVisible();
   await expect(page.getByText('₹12,345.67').first()).toBeVisible();
@@ -150,7 +141,7 @@ test('files still locked after name and date of birth ask for the password', asy
   await page.getByLabel('Password 1').fill(fixturePassword);
   await page.getByRole('button', { name: 'Unlock' }).click();
 
-  await expect(page.getByText('3 txns')).toBeVisible();
+  await expect(page.getByText('3 transactions')).toBeVisible();
 });
 
 test('passwords alone, without name or date of birth, each tried on every file', async ({
@@ -175,7 +166,7 @@ test('passwords alone, without name or date of birth, each tried on every file',
   await page.getByLabel('Password 2').fill(fixturePassword);
   await page.getByRole('button', { name: 'Unlock' }).click();
 
-  await expect(page.getByText('3 txns')).toBeVisible();
+  await expect(page.getByText('3 transactions')).toBeVisible();
 });
 
 test('keyboard only: choose files, open a card, focus and title follow', async ({
@@ -193,11 +184,8 @@ test('keyboard only: choose files, open a card, focus and title follow', async (
     page.keyboard.press('Enter'),
   ]);
   await chooser.setFiles(fixture);
-  await expect(page.getByText('Name this card')).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Import', exact: true })
-    .last()
-    .click();
+  await expect(page.getByLabel('Card name')).toBeVisible();
+  await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
 
   // The card's name is a real button: Enter opens it, focus moves to the
   // new page and the tab title names the card.
@@ -210,4 +198,37 @@ test('keyboard only: choose files, open a card, focus and title follow', async (
   await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
   await expect(page).toHaveTitle('Card ····4321 · Kardabra');
   await expect(page.getByRole('main')).toBeFocused();
+});
+
+test('review: remove a file, and a missing due day is pointed out', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page
+    .locator('#statement-file-input')
+    .setInputFiles([
+      fixture,
+      fileURLToPath(new URL('../fixtures/legacy.xls', import.meta.url)),
+    ]);
+  await expect(
+    page.getByRole('heading', { name: 'Review and import' }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole('button', { name: 'Import 2 statements' }),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Remove hdfc_style.csv' }).click();
+  const importOne = page.getByRole('button', { name: 'Import 1 statement' });
+  await expect(importOne).toBeVisible();
+
+  // legacy.xls prints no due date: pressing Import says so and focuses it.
+  await importOne.click();
+  await expect(page.getByRole('alert')).toContainText('Add the due day');
+  const dueDay = page.getByLabel('Due day of the month');
+  await expect(dueDay).toBeFocused();
+  await dueDay.fill('15');
+  await importOne.click();
+
+  await expect(page.locator('.card-tile')).toHaveCount(1);
 });
