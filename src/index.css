@@ -72,6 +72,9 @@ p {
   max-width: 60rem;
   margin: 0 auto;
   padding: var(--space-md) var(--space-md) var(--space-2xl);
+  /* Bank file names and UPI payees are long unbroken strings; let them
+     wrap rather than widen the page on a phone. Amounts opt out (.num). */
+  overflow-wrap: anywhere;
 }
 
 .app-nav {
@@ -579,6 +582,11 @@ input[type='number']::-webkit-inner-spin-button {
 .txn-header .import-actions {
   margin-top: 0;
 }
+/* A table never widens the page: if it can't fit, it scrolls inside its
+   own panel. */
+.table-scroll {
+  overflow-x: auto;
+}
 .txn-table {
   width: 100%;
   border-collapse: collapse;
@@ -589,6 +597,16 @@ input[type='number']::-webkit-inner-spin-button {
   border-bottom: 1px solid var(--line);
   text-align: left;
 }
+.txn-table th,
+.txn-table .nowrap {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+/* Date and amount shrink to their content; payee takes the rest. */
+.txn-table td.nowrap,
+.txn-table td.num {
+  width: 1%;
+}
 .txn-table th {
   color: var(--ink-muted);
   font-size: var(--text-sm);
@@ -597,6 +615,7 @@ input[type='number']::-webkit-inner-spin-button {
 .txn-table .num {
   text-align: right;
   white-space: nowrap;
+  overflow-wrap: normal;
 }
 /* Purchases stay in ink; only money coming back is coloured (it also
    carries a + sign, so colour is never the only cue). */

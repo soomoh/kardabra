@@ -47,6 +47,9 @@ const HATCH_STROKE = 2; // px outline around a hatched (unpaid) segment
 // must stay visible instead of vanishing under gap subtraction. The
 // reallocation arithmetic lives in lib/trends.ts's allocateSegmentHeights.
 const MIN_SEGMENT_PX = 4;
+// A hatched (unpaid) segment needs room for its outline and at least one
+// visible stripe; any thinner and it reads as solid, i.e. as paid.
+const MIN_HATCHED_PX = 12;
 
 /** The smallest "nice" (1/2/5 * 10^n) ceiling for `max`, used as the top
  * gridline so the four gridlines land on round numbers instead of
@@ -190,7 +193,7 @@ function TrendsChart({ trends }: TrendsChartProps) {
             {anyUnpaid && (
               <li className="legend-key">
                 <span className="legend-swatch hatch" aria-hidden="true" />
-                Hatched: not paid yet
+                Not paid yet
               </li>
             )}
           </ul>
@@ -262,7 +265,11 @@ function TrendsChart({ trends }: TrendsChartProps) {
                 const segmentHeights = allocateSegmentHeights(
                   periodValues,
                   yForValue(monthTotals[periodIndex]),
-                  MIN_SEGMENT_PX,
+                  visibleSeries.map((series) =>
+                    series.unpaid[periodIndex]
+                      ? MIN_HATCHED_PX
+                      : MIN_SEGMENT_PX,
+                  ),
                   SEGMENT_GAP,
                 );
 
@@ -452,34 +459,36 @@ function LegendChip({ series, colorVar, dimmed, onToggle }: LegendChipProps) {
  * table that already shows everything. */
 function TrendsTable({ trends }: { trends: MonthlyTrends }) {
   return (
-    <table className="txn-table">
-      <thead>
-        <tr>
-          <th>Month</th>
-          {trends.series.map((series) => (
-            <th key={series.cardId ?? 'other'} className="num">
-              {series.nickname}
-            </th>
-          ))}
-          <th className="num">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {trends.periods.map((period, periodIndex) => (
-          <tr key={period}>
-            <td>{formatPeriodLabel(period)}</td>
+    <div className="table-scroll">
+      <table className="txn-table">
+        <thead>
+          <tr>
+            <th>Month</th>
             {trends.series.map((series) => (
-              <td key={series.cardId ?? 'other'} className="num">
-                {formatINR(series.values[periodIndex])}
-              </td>
+              <th key={series.cardId ?? 'other'} className="num">
+                {series.nickname}
+              </th>
             ))}
-            <td className="num">
-              {formatINR(trends.monthTotals[periodIndex])}
-            </td>
+            <th className="num">Total</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {trends.periods.map((period, periodIndex) => (
+            <tr key={period}>
+              <td className="nowrap">{formatPeriodLabel(period)}</td>
+              {trends.series.map((series) => (
+                <td key={series.cardId ?? 'other'} className="num">
+                  {formatINR(series.values[periodIndex])}
+                </td>
+              ))}
+              <td className="num">
+                {formatINR(trends.monthTotals[periodIndex])}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

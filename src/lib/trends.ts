@@ -158,19 +158,22 @@ export function visibleMonthTotals(
 /**
  * Pixel heights for one bar's stacked segments, index-aligned with `values`.
  *
- * Every value > 0 gets at least `minPx` (a card that vanishes from the bar
- * is worse than one drawn slightly over-scale), zeros get 0, and the total
- * stays truthful: heights plus gaps always sum to `barHeightPx`. The pixels
- * a tiny segment gains come from the largest segment(s). Exact numbers live
+ * Every value > 0 gets at least its minimum (`minPx`, one number for all or
+ * one per segment — a hatched segment needs more room for its stripes to
+ * read), zeros get 0, and the total stays truthful: heights plus gaps always
+ * sum to `barHeightPx`. The pixels a tiny segment gains come from the
+ * segment(s) with the most room above their own minimum. Exact numbers live
  * in the tooltip and table. When even the minimums don't fit, the height is
  * split equally — at that size, presence is all a bar can show.
  */
 export function allocateSegmentHeights(
   values: number[],
   barHeightPx: number,
-  minPx: number,
+  minPx: number | number[],
   gapPx: number,
 ): number[] {
+  const minOf = (index: number) =>
+    Array.isArray(minPx) ? (minPx[index] ?? 0) : minPx;
   const heights = values.map(() => 0);
   const nonzeroIndices = values
     .map((value, index) => ({ value, index }))
@@ -179,8 +182,9 @@ export function allocateSegmentHeights(
   if (nonzeroIndices.length === 0) return heights;
 
   const available = barHeightPx - gapPx * (nonzeroIndices.length - 1);
+  const minTotal = nonzeroIndices.reduce((sum, index) => sum + minOf(index), 0);
 
-  if (available <= minPx * nonzeroIndices.length) {
+  if (available <= minTotal) {
     // Degenerate: mins don't fit — equal split of whatever's left.
     const each = Math.max(0, available / nonzeroIndices.length);
     for (const index of nonzeroIndices) heights[index] = each;
@@ -192,26 +196,27 @@ export function allocateSegmentHeights(
     heights[index] = (values[index] / total) * available;
   }
 
-  // Raise under-min segments to minPx, then repay those pixels from the
-  // largest segment(s) without pushing any below minPx. The feasibility
-  // check above guarantees enough headroom.
+  // Raise under-min segments to their minimum, then repay those pixels from
+  // the segment(s) with the most headroom, never pushing one below its own
+  // minimum. The feasibility check above guarantees enough headroom.
   let deficit = 0;
   for (const index of nonzeroIndices) {
-    if (heights[index] < minPx) {
-      deficit += minPx - heights[index];
-      heights[index] = minPx;
+    if (heights[index] < minOf(index)) {
+      deficit += minOf(index) - heights[index];
+      heights[index] = minOf(index);
     }
   }
 
   while (deficit > 1e-9) {
-    let largestIndex = nonzeroIndices[0];
+    let roomiest = nonzeroIndices[0];
     for (const index of nonzeroIndices) {
-      if (heights[index] > heights[largestIndex]) largestIndex = index;
+      if (heights[index] - minOf(index) > heights[roomiest] - minOf(roomiest))
+        roomiest = index;
     }
-    const headroom = heights[largestIndex] - minPx;
+    const headroom = heights[roomiest] - minOf(roomiest);
     if (headroom <= 0) break; // float edge cases only
     const take = Math.min(deficit, headroom);
-    heights[largestIndex] -= take;
+    heights[roomiest] -= take;
     deficit -= take;
   }
 

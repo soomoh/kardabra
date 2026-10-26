@@ -252,3 +252,26 @@ describe('monthlyTrends — unpaid months', () => {
     expect(result.series.flatMap((s) => s.unpaid).some(Boolean)).toBe(false);
   });
 });
+
+describe('allocateSegmentHeights — per-segment minimums', () => {
+  it('a tiny hatched segment gets its larger minimum; the total stays true', () => {
+    // 1000 vs 1: proportionally the small one would be ~0.1px.
+    const heights = allocateSegmentHeights([1000, 1], 100, [4, 12], 2);
+    expect(heights[1]).toBeCloseTo(12);
+    expect(heights[0] + heights[1] + 2).toBeCloseTo(100);
+  });
+
+  it('repays from the segment with the most room above its own minimum', () => {
+    const heights = allocateSegmentHeights([50, 50, 1], 100, [40, 4, 12], 0);
+    // Segment 0 is pinned near its 40px minimum's neighbourhood; segment 1
+    // has more headroom and pays.
+    expect(heights[2]).toBeCloseTo(12);
+    expect(heights[0]).toBeGreaterThanOrEqual(40);
+    expect(heights[1]).toBeGreaterThanOrEqual(4);
+    expect(heights.reduce((a, b) => a + b, 0)).toBeCloseTo(100);
+  });
+
+  it('equal split when the minimums alone do not fit', () => {
+    expect(allocateSegmentHeights([5, 5], 20, [12, 12], 0)).toEqual([10, 10]);
+  });
+});

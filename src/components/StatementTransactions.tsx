@@ -117,48 +117,50 @@ function StatementTransactions({
           </div>
         )}
       </div>
-      <table className="txn-table">
-        <thead>
-          <tr>
-            {selecting && <th></th>}
-            <th>Date</th>
-            <th>Payee</th>
-            <th className="num">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((txn, index) => (
-            // Rows have no stable id of their own; position is part of the
-            // key, matching the Fix flow's `checked` positions.
-            <tr key={`${txn.dateISO}-${txn.payee}-${txn.amount}-${index}`}>
-              {fixMode.mode === 'selecting' && (
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={fixMode.checked.has(index)}
-                    onChange={() => toggleChecked(index)}
-                    aria-label={`Mark ${txn.payee} as bill payment`}
-                  />
-                </td>
-              )}
-              <td>{formatDateLabel(txn.dateISO)}</td>
-              <td>
-                {txn.payee}
-                {!selecting && paymentIndices.includes(index) && (
-                  <span className="credit-label"> · bill payment</span>
-                )}
-              </td>
-              <td
-                className={
-                  txn.amount < 0 ? 'num amount-debit' : 'num amount-credit'
-                }
-              >
-                {formatSignedINR(txn.amount)}
-              </td>
+      <div className="table-scroll">
+        <table className="txn-table">
+          <thead>
+            <tr>
+              {selecting && <th></th>}
+              <th>Date</th>
+              <th>Payee</th>
+              <th className="num">Amount</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {transactions.map((txn, index) => (
+              // Rows have no stable id of their own; position is part of the
+              // key, matching the Fix flow's `checked` positions.
+              <tr key={`${txn.dateISO}-${txn.payee}-${txn.amount}-${index}`}>
+                {fixMode.mode === 'selecting' && (
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={fixMode.checked.has(index)}
+                      onChange={() => toggleChecked(index)}
+                      aria-label={`Mark ${txn.payee} as bill payment`}
+                    />
+                  </td>
+                )}
+                <td className="nowrap">{formatDateLabel(txn.dateISO)}</td>
+                <td>
+                  {txn.payee}
+                  {!selecting && paymentIndices.includes(index) && (
+                    <span className="credit-label"> · bill payment</span>
+                  )}
+                </td>
+                <td
+                  className={
+                    txn.amount < 0 ? 'num amount-debit' : 'num amount-credit'
+                  }
+                >
+                  {formatSignedINR(txn.amount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
