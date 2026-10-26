@@ -44,4 +44,5 @@ debug/
 
 # Playwright output
 test-results/
+test-results-visual/
 playwright-report/
