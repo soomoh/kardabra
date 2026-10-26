@@ -151,6 +151,35 @@ export function formatPeriodLabel(period: string): string {
   return `${month}-${year}`;
 }
 
+const MONTH_ABBREVIATIONS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** 'YYYY-MM' → its month and year as separate short labels ('Jun',
+ * '2025'), for chart axes where the year is printed only where it
+ * changes. Falls back to the raw period. */
+export function periodAxisLabel(period: string): {
+  month: string;
+  year: string;
+} {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  const month =
+    match === null ? undefined : MONTH_ABBREVIATIONS[Number(match[2]) - 1];
+  if (match === null || month === undefined) return { month: period, year: '' };
+  return { month, year: match[1] };
+}
+
 export function formatDateLabel(iso: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (match === null) return iso;

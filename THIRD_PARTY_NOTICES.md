@@ -15,3 +15,10 @@ generator and bank detector in **burnrate**, re-expressed as data tables.
 Each is distributed under its own licence, included in its package:
 `idb` (ISC), `react` / `react-dom` (MIT), SheetJS `xlsx` (Apache-2.0),
 `pdfjs-dist` (Apache-2.0).
+
+## Fonts
+
+Bundled from Fontsource packages, each under the SIL Open Font License 1.1
+(licence text included in its package):
+Figtree (`@fontsource-variable/figtree`) and Bricolage Grotesque
+(`@fontsource-variable/bricolage-grotesque`).

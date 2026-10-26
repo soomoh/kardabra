@@ -134,6 +134,7 @@ function ImportReview({
           Start over
         </button>
         <button
+          className="primary"
           onClick={onCommit}
           disabled={committing || !planIsComplete(outcomes, inputs)}
         >

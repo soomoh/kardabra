@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   monthlyTrends,
+  cycleKey,
   visibleMonthTotals,
   allocateSegmentHeights,
   type TrendsCard,
@@ -219,5 +220,35 @@ describe('allocateSegmentHeights — no nonzero segment may vanish', () => {
 
   it('single segment: gets the whole bar, no gap involved', () => {
     expect(allocateSegmentHeights([42], BAR, MIN, GAP)).toEqual([BAR]);
+  });
+});
+
+describe('monthlyTrends — unpaid months', () => {
+  const cards = [
+    { id: 'a', nickname: 'A', createdAt: '2025-01-01T00:00:00Z' },
+    { id: 'b', nickname: 'B', createdAt: '2025-02-01T00:00:00Z' },
+  ];
+  const cycles = [
+    { cardId: 'a', period: '2025-09', spend: 100 },
+    { cardId: 'a', period: '2025-10', spend: 200 },
+    { cardId: 'b', period: '2025-10', spend: 50 },
+  ];
+
+  it('flags exactly the (card, month) pairs passed as unpaid', () => {
+    const result = monthlyTrends(
+      cards,
+      cycles,
+      new Set([cycleKey('a', '2025-10')]),
+    );
+    const oct = result.periods.indexOf('2025-10');
+    const sep = result.periods.indexOf('2025-09');
+    expect(result.series[0].unpaid[oct]).toBe(true);
+    expect(result.series[0].unpaid[sep]).toBe(false);
+    expect(result.series[1].unpaid[oct]).toBe(false);
+  });
+
+  it('nothing is unpaid by default', () => {
+    const result = monthlyTrends(cards, cycles);
+    expect(result.series.flatMap((s) => s.unpaid).some(Boolean)).toBe(false);
   });
 });

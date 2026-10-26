@@ -167,7 +167,7 @@ function PasswordStep({
           <button type="button" onClick={onSkip} disabled={unlocking}>
             Skip {count === 1 ? 'this file' : 'these files'}
           </button>
-          <button type="submit" disabled={!canSubmit}>
+          <button type="submit" className="primary" disabled={!canSubmit}>
             {unlocking ? 'Unlocking…' : 'Unlock'}
           </button>
         </div>

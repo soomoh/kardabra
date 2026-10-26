@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { actionableCycle, cycleNeedsPayment } from '../../src/lib/cycles';
-import { unpaidSummary } from '../../src/lib/unpaidSummary';
+import { unpaidSummary, unpaidTotals } from '../../src/lib/unpaidSummary';
 import { formatINR } from '../../src/lib/money';
 import type { CardRecord, CycleRecord } from '../../src/db/schema';
 
@@ -129,5 +129,66 @@ describe('unpaidSummary counts only actionable cycles', () => {
       },
     ];
     expect(unpaidSummary(entries)).toBe('2 unpaid');
+  });
+});
+
+describe('unpaidTotals — the dashboard headline numbers', () => {
+  const card = (id: string): CardRecord => ({
+    id,
+    last4: '1111',
+    nickname: id,
+    createdAt: '2025-11-01T00:00:00.000Z',
+  });
+
+  it('sums unpaid bills and picks the earliest due date', () => {
+    const entries = [
+      {
+        card: card('a'),
+        cycle: cycle({ totalDue: 1000, dueDateISO: '2025-11-20' }),
+      },
+      {
+        card: card('b'),
+        cycle: cycle({ totalDue: 500, dueDateISO: '2025-11-04' }),
+      },
+      {
+        card: card('c'),
+        cycle: cycle({ totalDue: 900, paidAt: '2025-10-30' }),
+      },
+    ];
+    expect(unpaidTotals(entries)).toEqual({
+      count: 2,
+      total: 1500,
+      isEstimate: false,
+      nextDueISO: '2025-11-04',
+    });
+  });
+
+  it('spend stands in for a missing bill and marks the total an estimate', () => {
+    const entries = [
+      { card: card('a'), cycle: cycle({ spend: 300, dueDateISO: null }) },
+    ];
+    expect(unpaidTotals(entries)).toEqual({
+      count: 1,
+      total: 300,
+      isEstimate: true,
+      nextDueISO: null,
+    });
+  });
+
+  it('no total when an unpaid cycle has neither figure', () => {
+    const entries = [
+      { card: card('a'), cycle: cycle({ totalDue: 1000 }) },
+      { card: card('b'), cycle: cycle({}) },
+    ];
+    expect(unpaidTotals(entries).total).toBeNull();
+  });
+
+  it('nothing unpaid', () => {
+    expect(unpaidTotals([{ card: card('a'), cycle: null }])).toEqual({
+      count: 0,
+      total: 0,
+      isEstimate: false,
+      nextDueISO: null,
+    });
   });
 });

@@ -7,6 +7,7 @@ import {
   todayISO,
   formatPeriodLabel,
   formatDateLabel,
+  periodAxisLabel,
 } from '../../src/lib/dates';
 
 describe('clampDayToMonth', () => {
@@ -117,5 +118,16 @@ describe('display formatters (Indian conventions, not US month-first)', () => {
   it('malformed input is returned unchanged, not mangled', () => {
     expect(formatPeriodLabel('whatever')).toBe('whatever');
     expect(formatDateLabel('2025-09')).toBe('2025-09');
+  });
+});
+
+describe('periodAxisLabel', () => {
+  it('splits a period into short month and year', () => {
+    expect(periodAxisLabel('2025-06')).toEqual({ month: 'Jun', year: '2025' });
+    expect(periodAxisLabel('2026-01')).toEqual({ month: 'Jan', year: '2026' });
+  });
+  it('falls back to the raw text when it is not a period', () => {
+    expect(periodAxisLabel('2025-13')).toEqual({ month: '2025-13', year: '' });
+    expect(periodAxisLabel('junk')).toEqual({ month: 'junk', year: '' });
   });
 });

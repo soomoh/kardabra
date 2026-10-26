@@ -1,142 +1,240 @@
-/* index.css — hand-written, no CSS framework (per the approved plan).
- * Tone/amount colors are custom properties on :root, overridden inside a
- * prefers-color-scheme media query — same property names, different
- * values, so `var(--tone-overdue)` etc. themes itself automatically. */
+/* index.css — hand-written, no CSS framework. Every value comes from
+ * tokens.css; brand rules are in .claude/DESIGN.md. */
 
-:root {
-  color-scheme: light dark;
-  font:
-    16px/1.5 system-ui,
-    sans-serif;
-  --border-color: #ddd;
-  --muted-color: #666;
-  --bg-subtle: #f6f6f6;
-  --tone-paid: #2e7d32;
-  --tone-ok: #555555;
-  --tone-soon: #b26a00;
-  --tone-overdue: #b3261e;
-  --tone-unknown: #888888;
-  --amount-debit: #b3261e;
-  --amount-credit: #2e7d32;
-  /* The page's own canvas color, matched by `color-scheme: light dark`
-   * above (the UA renders a white canvas in light, near-black in dark,
-   * with no explicit background-color set anywhere in this file — see
-   * body's rule below). TrendsChart's stacked-bar segments stroke with
-   * this exact color to punch a 2px gap between them (see .trends-*
-   * rules), so it must track whatever the real background actually is,
-   * not just approximate it. */
-  --chart-surface: #ffffff;
-  /* Categorical palette for the spend-trends chart, in fixed order —
-   * card 1 (oldest by createdAt) always gets --series-1, etc. Pre-
-   * validated against --chart-surface/--bg-subtle by the project's
-   * dataviz palette validator (light mode carries a documented, expected
-   * contrast WARN on 3 of the 8 hues — relief is the required table view,
-   * not a palette change) — these exact values must not be edited; see
-   * TrendsChart.tsx's header comment. */
-  --series-1: #2a78d6;
-  --series-2: #1baf7a;
-  --series-3: #eda100;
-  --series-4: #008300;
-  --series-5: #4a3aa7;
-  --series-6: #e34948;
-  --series-7: #e87ba4;
-  --series-8: #eb6834;
-}
+@import './tokens.css';
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --border-color: #3a3a3a;
-    --muted-color: #aaaaaa;
-    --bg-subtle: #1c1c1c;
-    --tone-paid: #7cd992;
-    --tone-ok: #bbbbbb;
-    --tone-soon: #e0a742;
-    --tone-overdue: #e5817a;
-    --tone-unknown: #999999;
-    --amount-debit: #e5817a;
-    --amount-credit: #7cd992;
-    --chart-surface: #121212;
-    --series-1: #3987e5;
-    --series-2: #199e70;
-    --series-3: #c98500;
-    --series-4: #008300;
-    --series-5: #9085e9;
-    --series-6: #e66767;
-    --series-7: #d55181;
-    --series-8: #d95926;
-  }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--text-base) / 1.5 var(--font-body);
+  -webkit-font-smoothing: antialiased;
 }
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+h1 {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+}
+h2 {
+  margin: var(--space-xl) 0 var(--space-sm);
+  font-size: var(--text-xl);
+  font-weight: 650;
+}
+p {
+  text-wrap: pretty;
+}
+
+/* Money is always tabular so columns of amounts line up. */
+.amount,
+.txn-table td.num,
+.txn-table th.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+.error-text {
+  color: var(--danger);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}
+
+/* --- Layout --- */
+
 .app {
-  max-width: 900px;
+  max-width: 60rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem 3rem;
+  padding: var(--space-md) var(--space-md) var(--space-2xl);
 }
 
 .app-nav {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border-color);
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-lg);
 }
 .app-nav-brand {
-  font-weight: 700;
   margin-right: auto;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 750;
+  letter-spacing: -0.02em;
 }
 .app-nav button {
-  border: none;
+  border-color: transparent;
 }
 /* Styled off aria-current (not a parallel "active" class) so the visual
    highlight and the assistive-tech announcement come from one attribute
    and can't disagree. */
 .app-nav button[aria-current='page'] {
-  background: var(--bg-subtle);
-  font-weight: 600;
-}
-h1 {
-  margin: 0 0 0.25rem;
+  background: var(--surface);
+  border-color: var(--line);
 }
 
-button {
-  font: inherit;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+/* --- Controls --- */
+
+button,
+.button-like {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: var(--control-height);
+  padding: 0 var(--space-md);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius-full);
   background: transparent;
-  cursor: pointer;
-}
-button:hover {
-  background: var(--bg-subtle);
-}
-
-/* Explicit background/color on BOTH select and option, not just
- * :root's color-scheme (which is set, but Chrome still rendered the
- * dropdown popup white-on-white in dark mode — user-reported): the
- * popup list takes its colors from the option elements themselves, so
- * styling only the closed control isn't enough. */
-select {
+  color: var(--ink);
   font: inherit;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background-color: var(--bg-subtle);
-  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
-option {
-  background-color: var(--bg-subtle);
-  color: inherit;
+button:hover,
+.button-like:hover {
+  background: var(--surface);
+}
+button:active,
+.button-like:active {
+  transform: translateY(1px);
+}
+button:disabled {
+  border-color: var(--line);
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: not-allowed;
+  transform: none;
 }
 
-/* Hide the up/down spinner on number inputs everywhere (user revision):
- * a fee amount or a due-day is typed, not nudged, and the arrows only
- * added visual clutter. Where a keyboard arrow-key still increments a
- * focused field, the inputs set step={1} so it moves by a whole unit,
- * never the old 0.01 rupee. */
+button.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+button.primary:hover {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+button.primary:disabled {
+  border-color: var(--line);
+  background: var(--line);
+  color: var(--ink-muted);
+}
+
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.link-button {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.link-button:hover {
+  background: none;
+  color: var(--primary);
+}
+
+.icon-button {
+  min-height: auto;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border-color: transparent;
+  color: var(--ink-muted);
+}
+.icon-button:hover {
+  color: var(--ink);
+}
+
+.back-link {
+  min-height: auto;
+  margin-bottom: var(--space-md);
+  padding: var(--space-2xs) 0;
+  border: none;
+  color: var(--ink-muted);
+}
+.back-link:hover {
+  background: none;
+  color: var(--ink);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'],
+select {
+  min-height: var(--control-height);
+  padding: 0 var(--space-sm);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  transition: border-color var(--dur) var(--ease);
+}
+input:hover,
+select:hover {
+  border-color: var(--ink-muted);
+}
+input:focus-visible,
+select:focus-visible {
+  border-color: var(--focus);
+  outline-offset: 1px;
+}
+input::placeholder {
+  color: var(--ink-muted);
+  opacity: 0.8;
+}
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+input[type='checkbox'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--primary);
+}
+/* The popup list takes its colours from the option elements themselves
+   (Chrome rendered it white-on-white in dark mode otherwise). */
+option {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+
+/* A fee or a due day is typed, not nudged: no spinner arrows. */
 input[type='number'] {
   appearance: textfield;
   -moz-appearance: textfield;
@@ -147,240 +245,339 @@ input[type='number']::-webkit-inner-spin-button {
   margin: 0;
 }
 
-.back-link {
-  border: none;
-  padding: 0;
-  margin-bottom: 1rem;
-  color: inherit;
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
 }
-.back-link:hover {
-  background: none;
-  text-decoration: underline;
+
+/* --- Status pills ---
+ * Hatching means "not paid yet" everywhere (pills, chart). The text never
+ * sits on the hatch: it lives in a small dot so the label stays legible. */
+
+.hatch {
+  --hatch-color: var(--attention);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--hatch-color) 0 1.5px,
+    transparent 1.5px 4px
+  );
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 1.75rem;
+  padding: 0 var(--space-sm);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.status-pill .status-dot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--hatch-color);
+  border-radius: 50%;
+}
+.status-pill[data-tone='soon'] {
+  background: var(--attention-bg);
+  color: var(--attention-ink);
+}
+.status-pill[data-tone='ok'] {
+  border-color: var(--line);
+  color: var(--ink);
+}
+.status-pill[data-tone='overdue'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.status-pill[data-tone='overdue'] .status-dot {
+  --hatch-color: var(--danger);
+}
+.status-pill[data-tone='paid'] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.status-pill[data-tone='unknown'] {
+  padding: 0;
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-xs);
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 /* --- Dashboard --- */
 
+/* The one bold moment on the page: what you owe, and by when. */
 .dashboard-header {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-lg);
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  background: var(--hero-bg);
+  color: var(--hero-ink);
 }
-.card-min-due {
-  color: var(--muted-color);
-}
-/* Now the dashboard's headline (the redundant "Kardabra" h1 was removed),
- * so it carries a little more weight than muted body text. */
-.dashboard-summary {
+.hero-label {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
-.empty-state {
-  text-align: center;
-  padding: 3rem 1rem;
+.hero-amount {
+  margin: var(--space-2xs) 0;
+  color: var(--hero-num);
+  font-family: var(--font-display);
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
 }
+.hero-amount .paise {
+  font-size: var(--text-2xl);
+}
+.hero-sub {
+  margin: 0;
+}
+.hero-sub strong {
+  color: var(--hero-num);
+}
+
+.empty-state {
+  padding: var(--space-2xl) var(--space-md);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-align: center;
+}
+.empty-state p {
+  max-width: 34rem;
+  margin: 0 auto var(--space-lg);
+  color: var(--ink-muted);
+}
+
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-sm);
 }
 .card-tile {
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 1rem;
-  cursor: pointer;
-  /* Flex column + a min height so every tile is the same shape and the
-   * action button (margin-top:auto below) lands at the same spot on each
-   * one, regardless of how much content sits above it. Grid stretch
-   * already equalises heights within a row; this floors short tiles too. */
+  position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 150px;
+  gap: var(--space-xs);
+  min-height: 10rem;
+  padding: var(--space-md);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  transition: border-color var(--dur) var(--ease);
 }
-/* Bottom-anchors "Mark paid"/"Undo" (and the delete-confirm actions) so
- * the button never shifts vertically with the content above it. */
+.card-tile:hover {
+  border-color: var(--line-strong);
+}
+.card-tile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  margin: calc(-1 * var(--space-xs)) calc(-1 * var(--space-xs)) 0 0;
+}
+.card-nickname {
+  font-weight: 650;
+}
+.card-amount {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.card-min-due {
+  margin: 0;
+  color: var(--ink-muted);
+}
+.due-status {
+  margin: 0;
+}
+/* Bottom-anchored so the button sits at the same spot on every tile. */
 .card-action {
   margin-top: auto;
   align-self: flex-start;
 }
-.card-tile-header {
+.tile-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.card-nickname {
-  font-weight: 600;
-}
-.card-amount {
-  font-size: 1.25rem;
-  margin: 0.25rem 0;
-}
-.card-min-due {
-  margin: 0 0 0.25rem;
-}
-/* .due-status's color is set inline, from the same --tone-* variable
- * dueStatus()'s `tone` field names — no per-tone class needed. */
-.due-status {
-  margin: 0 0 0.5rem;
+  align-items: center;
 }
 
 /* --- Import --- */
 
 .dropzone {
-  border: 2px dashed var(--border-color);
-  border-radius: 10px;
-  padding: 2rem 1rem;
+  margin: var(--space-md) 0;
+  padding: var(--space-xl) var(--space-md);
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
   text-align: center;
-  margin: 1rem 0;
 }
-.button-like {
-  display: inline-block;
-  margin-top: 0.5rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.button-like:hover {
-  background: var(--bg-subtle);
+.dropzone p {
+  margin: 0 0 var(--space-sm);
 }
 .plan-list {
-  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 .plan-row {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 0.6rem 0.8rem;
-  margin-bottom: 0.5rem;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
 }
 .plan-row-file {
-  font-weight: 600;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-2xs);
+  font-weight: 650;
+  overflow-wrap: anywhere;
 }
 .plan-row-details {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  color: var(--muted-color);
+  gap: var(--space-xs) var(--space-md);
+  color: var(--ink-muted);
 }
-/* The "Name this card" field reads as a labelled control, not a bare box
- * dropped among the metadata spans — the nickname is the card's only
- * on-dashboard identifier now, so it's given prominence at import. */
-.nickname-field {
+.nickname-field,
+.field {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.8rem;
-  color: var(--muted-color);
+  gap: var(--space-2xs);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
-.nickname-field input {
-  font: inherit;
-  color: var(--text-color, inherit);
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
-}
-.badge {
-  border: 1px solid var(--tone-soon);
-  color: var(--tone-soon);
-  border-radius: 999px;
-  padding: 0.1rem 0.6rem;
-  font-size: 0.85rem;
-}
-.error-text {
-  color: var(--amount-debit);
-}
-.import-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
+.nickname-field input,
+.field input {
+  font-size: var(--text-base);
+  font-weight: 400;
 }
 
 .password-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  max-width: 24rem;
+  gap: var(--space-md);
+  max-width: 26rem;
 }
 .password-form label {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.9rem;
+  gap: var(--space-2xs);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.password-form input {
+  min-height: var(--control-height-lg);
+  font-size: var(--text-base);
+  font-weight: 400;
 }
 .password-list {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-xs);
   margin: 0;
   padding: 0;
   border: none;
 }
 .password-list legend {
   padding: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 .password-list p {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 .password-form .link-button {
   align-self: flex-start;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: 0.9rem;
-  text-decoration: underline;
-  cursor: pointer;
-}
-.password-form input,
-.password-list input {
-  font: inherit;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
 }
 
 /* --- Card detail --- */
 
 .card-detail-header {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-lg);
 }
-.statement-list {
-  list-style: none;
-  margin: 0 0 1.5rem;
-  padding: 0;
-}
-.statement-row {
+.rename-row,
+.fee-label-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.fee-label-row {
+  margin-top: var(--space-md);
+}
+.fee-discrepancy,
+.charge-hint {
+  color: var(--attention-ink);
+}
+.fee-discrepancy {
+  margin: var(--space-xs) 0 0;
+}
+.charge-hint {
+  font-size: var(--text-sm);
+}
+
+.statement-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.statement-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--space-2xs) var(--space-md);
   width: 100%;
+  min-height: 3rem;
+  padding: var(--space-xs) var(--space-md);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-weight: 400;
   text-align: left;
-  border-radius: 8px;
-  margin-bottom: 0.4rem;
+}
+.statement-row:hover {
+  border-color: var(--line-strong);
 }
 .statement-row.selected {
-  background: var(--bg-subtle);
-  border-color: var(--muted-color);
+  border: 2px solid var(--primary);
 }
 .statement-period {
-  font-weight: 600;
+  font-weight: 650;
 }
-/* The Transactions heading and its "Fix bill payment"/Save/Cancel
- * controls share one row (same layout idea as .trends-header). */
+
 .txn-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-xs) var(--space-md);
+}
+.txn-header .import-actions {
+  margin-top: 0;
 }
 .txn-table {
   width: 100%;
@@ -388,168 +585,146 @@ input[type='number']::-webkit-inner-spin-button {
 }
 .txn-table th,
 .txn-table td {
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--line);
   text-align: left;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--border-color);
 }
-.amount-debit {
-  color: var(--amount-debit);
+.txn-table th {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
+.txn-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+/* Purchases stay in ink; only money coming back is coloured (it also
+   carries a + sign, so colour is never the only cue). */
 .amount-credit {
-  color: var(--amount-credit);
+  color: var(--primary);
+  font-weight: 600;
 }
-
-.rename-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-button.danger {
-  color: var(--tone-overdue);
-  border-color: var(--tone-overdue);
-}
-
 .credit-label {
-  color: var(--muted-color);
-  font-size: 0.85rem;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
 }
 
-.icon-button {
-  border: none;
-  padding: 0.25rem;
-  line-height: 0;
-  color: var(--muted-color);
-}
-.icon-button:hover {
-  color: inherit;
-  background: var(--bg-subtle);
-}
-.tile-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-/* --- Fee label + card costs (Phase 5) --- */
-
-.fee-label-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-/* select styling comes from the global rule above (dark-mode fix) */
-.fee-label-row input {
-  font: inherit;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-}
-
-.fee-discrepancy {
-  color: var(--tone-soon);
-  margin: 0.5rem 0 0;
-}
-
-.charge-hint {
-  color: var(--tone-soon);
-  font-size: 0.85rem;
-}
-
-/* --- Spend trends chart (Phase 5) --- */
+/* --- Spend trends chart --- */
 
 .trends-section {
   position: relative;
-  margin-top: 2rem;
+  margin-top: var(--space-xl);
+  padding: var(--space-md) var(--space-md) var(--space-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--chart-surface);
 }
 .trends-header {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-xs) var(--space-md);
+}
+.trends-header h2 {
+  margin: 0;
 }
 .trends-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 0.9rem;
-  margin: 0.75rem 0;
+  gap: var(--space-2xs) var(--space-md);
+  margin: var(--space-sm) 0;
+  padding: 0;
+  list-style: none;
 }
 .legend-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0 var(--space-2xs);
   border: none;
-  background: none;
-  padding: 0.1rem 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
-.legend-chip.dimmed {
-  opacity: 0.45;
+.legend-chip:hover {
+  background: none;
+  text-decoration: underline;
+}
+.legend-chip[aria-pressed='true'] {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+}
+.legend-chip[aria-pressed='true'] .legend-swatch {
+  background: transparent !important;
+}
+.legend-chip:disabled {
+  color: var(--ink);
+  cursor: default;
 }
 .legend-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
   flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--swatch);
+  border-radius: 0.25rem;
+}
+.legend-chip .legend-swatch {
+  background: var(--swatch);
+}
+.legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 2rem;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.legend-key .legend-swatch {
+  --swatch: var(--ink-muted);
+  --hatch-color: var(--ink-muted);
+  border-radius: 0.25rem;
 }
 .trends-chart-scroll {
   overflow-x: auto;
 }
-/* 340px min-width: an iPhone SE (375px CSS width) minus .app's 1rem
- * side padding leaves ~343px, so 6 months render without overflow-x
- * ever engaging by default (the scroll container is a safety net for
- * narrower-still viewports, not the normal state). No max-width: the
- * chart fills the full content column like the card grid above it, so
- * it's never a narrower, left-offset block (user revision — a capped,
- * left-aligned chart read as off-centre against the full-width grid).
- * Axis/label text is sized in viewBox units, so it scales with the svg
- * rather than needing a width cap to stay proportional. */
 .trends-chart-scroll svg {
   display: block;
-  min-width: 340px;
-  width: 100%;
-  height: auto;
+  font-family: var(--font-body);
 }
 .trends-segment {
   cursor: pointer;
 }
 .trends-segment:focus-visible {
-  outline: 2px solid var(--muted-color);
+  outline: 3px solid var(--focus);
   outline-offset: 1px;
 }
 .trends-tooltip {
   position: absolute;
-  pointer-events: none;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.8rem;
-  white-space: nowrap;
   z-index: 1;
-}
-.trends-tooltip strong {
-  font-weight: 600;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--tooltip-shadow);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-/* Phase 1 states: database status, error banner, totals warning. Styled
-   properly in the Phase 3 visual pass. */
+/* --- Database status, error banner, totals warning --- */
+
 .db-status {
-  padding: 2rem 0;
+  padding: var(--space-xl) 0;
 }
 .error-banner {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 1rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--amount-debit);
-  border-radius: 8px;
+  gap: var(--space-md);
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 2px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--surface);
 }
 .error-banner p,
 .totals-warning p {
@@ -557,11 +732,10 @@ button.danger {
 }
 .totals-warning {
   flex-basis: 100%;
-  margin: 0.5rem 0;
-  padding: 0.5rem 0.75rem;
-  border-left: 3px solid var(--tone-soon);
-  background: var(--bg-subtle);
-}
-.muted {
-  color: var(--muted-color);
+  margin: var(--space-xs) 0;
+  padding: var(--space-sm) var(--space-md);
+  border: 2px solid var(--attention);
+  border-radius: var(--radius-md);
+  background: var(--attention-bg);
+  color: var(--attention-ink);
 }

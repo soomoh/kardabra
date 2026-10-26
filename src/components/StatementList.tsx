@@ -68,7 +68,7 @@ function StatementList({
                   </span>
                   <span>{statement.fileName}</span>
                   <span>{statement.txnCount} txns</span>
-                  <span>Spend {formatINR(spend)}</span>
+                  <span className="amount">Spend {formatINR(spend)}</span>
                   {interestAndLate > 0 && (
                     <span className="charge-hint">
                       includes {formatINR(interestAndLate)} interest/late

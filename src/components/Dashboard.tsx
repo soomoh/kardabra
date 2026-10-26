@@ -11,10 +11,11 @@ import {
 } from '../db/db';
 import type { CardRecord, CycleRecord } from '../db/schema';
 import { sortDashboardCards, type CardWithCycle } from '../lib/sortCards';
-import { unpaidSummary } from '../lib/unpaidSummary';
-import { actionableCycle } from '../lib/cycles';
-import { todayISO } from '../lib/dates';
-import { monthlyTrends, type MonthlyTrends } from '../lib/trends';
+import { unpaidTotals } from '../lib/unpaidSummary';
+import { actionableCycle, cycleNeedsPayment } from '../lib/cycles';
+import { formatDateLabel, todayISO } from '../lib/dates';
+import { formatINR } from '../lib/money';
+import { cycleKey, monthlyTrends, type MonthlyTrends } from '../lib/trends';
 import CardTile from './CardTile';
 import TrendsChart from './TrendsChart';
 import type { View } from '../App';
@@ -46,14 +47,22 @@ function Dashboard({ setView }: DashboardProps) {
         getAllCycles(db),
       ]);
       if (cancelled) return;
-      setEntries(
-        cards.map((card) => ({
-          card,
-          cycle: actionableCycle(cycles.filter((c) => c.cardId === card.id)),
-        })),
+      const loaded = cards.map((card) => ({
+        card,
+        cycle: actionableCycle(cycles.filter((c) => c.cardId === card.id)),
+      }));
+      // Only a card's actionable cycle can be unpaid; older ones were
+      // rolled into it (lib/cycles.ts).
+      const unpaidKeys = new Set(
+        loaded.flatMap(({ card, cycle }) =>
+          cycle !== null && cycleNeedsPayment(cycle)
+            ? [cycleKey(card.id, cycle.period)]
+            : [],
+        ),
       );
+      setEntries(loaded);
       setStatementCount(statements.length);
-      setTrends(monthlyTrends(cards, cycles));
+      setTrends(monthlyTrends(cards, cycles, unpaidKeys));
     })().catch(reportError);
 
     return () => {
@@ -86,9 +95,12 @@ function Dashboard({ setView }: DashboardProps) {
   if (entries.length === 0) {
     return (
       <div className="empty-state">
-        <h1>Kardabra</h1>
-        <p>No cards yet. Import a statement to get started.</p>
-        <button onClick={() => setView({ name: 'import' })}>
+        <h1>No cards yet</h1>
+        <p>
+          Import your credit-card statements to see what you owe, when it's due,
+          and where the money went. Everything stays on this device.
+        </p>
+        <button className="primary" onClick={() => setView({ name: 'import' })}>
           Import statements
         </button>
       </div>
@@ -99,12 +111,7 @@ function Dashboard({ setView }: DashboardProps) {
 
   return (
     <div>
-      {/* No "Kardabra" heading here — the name already lives in the nav
-          bar, so a second copy above the total would be pure redundancy.
-          The unpaid summary IS the dashboard's headline. */}
-      <header className="dashboard-header">
-        <p className="dashboard-summary">{unpaidSummary(entries)}</p>
-      </header>
+      <Headline entries={entries} />
 
       <div className="card-grid">
         {sorted.map(({ card, cycle }) => (
@@ -129,6 +136,49 @@ function Dashboard({ setView }: DashboardProps) {
         <TrendsChart trends={trends} />
       )}
     </div>
+  );
+}
+
+/** What you owe across all cards, and by when: the dashboard's headline.
+ * Paise are drawn smaller so the rupees read first. */
+function Headline({ entries }: { entries: CardWithCycle[] }) {
+  const { count, total, isEstimate, nextDueISO } = unpaidTotals(entries);
+  if (count === 0) {
+    return (
+      <header className="dashboard-header">
+        <h1 className="hero-amount">All caught up</h1>
+        <p className="hero-sub">No unpaid bills on any card.</p>
+      </header>
+    );
+  }
+  const formatted = total === null ? null : formatINR(total);
+  const dot = formatted?.lastIndexOf('.') ?? -1;
+  const bills = count === 1 ? '1 card' : `${count} cards`;
+  return (
+    <header className="dashboard-header">
+      <p className="hero-label">{isEstimate ? 'To pay, about' : 'To pay'}</p>
+      <h1 className="hero-amount amount">
+        {formatted === null ? (
+          `${count} unpaid`
+        ) : dot === -1 ? (
+          formatted
+        ) : (
+          <>
+            {formatted.slice(0, dot)}
+            <span className="paise">{formatted.slice(dot)}</span>
+          </>
+        )}
+      </h1>
+      <p className="hero-sub">
+        across {bills}
+        {nextDueISO !== null && (
+          <>
+            {' '}
+            · next bill due <strong>{formatDateLabel(nextDueISO)}</strong>
+          </>
+        )}
+      </p>
+    </header>
   );
 }
 

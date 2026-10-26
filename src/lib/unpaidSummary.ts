@@ -15,6 +15,41 @@ import type { CardWithCycle } from './sortCards';
 import { cycleNeedsPayment } from './cycles';
 import { formatINR } from './money';
 
+/** The unpaid bills across all cards, as numbers: what the dashboard's
+ * headline is built from. `total` is null when some unpaid cycle has
+ * neither a bill nor a spend figure — a partial sum must not pass for the
+ * total. `nextDueISO` is the earliest due date among the unpaid bills. */
+export interface UnpaidTotals {
+  count: number;
+  total: number | null;
+  isEstimate: boolean;
+  nextDueISO: string | null;
+}
+
+export function unpaidTotals(entries: CardWithCycle[]): UnpaidTotals {
+  // cycleNeedsPayment, not a bare paidAt check: a ₹0 bill or a no-spend
+  // cycle isn't "unpaid", it's simply not owed (see lib/cycles.ts).
+  const unpaidCycles = entries
+    .map((entry) => entry.cycle)
+    .filter((cycle): cycle is CycleRecord => cycle !== null)
+    .filter((cycle) => cycleNeedsPayment(cycle));
+
+  const amounts = unpaidCycles.map((cycle) => cycle.totalDue ?? cycle.spend);
+  const total = amounts.some((amount) => amount === undefined)
+    ? null
+    : amounts.reduce((sum: number, a) => sum + (a ?? 0), 0);
+  const dueDates = unpaidCycles
+    .map((cycle) => cycle.dueDateISO)
+    .filter((d): d is string => d !== null)
+    .sort();
+  return {
+    count: unpaidCycles.length,
+    total,
+    isEstimate: unpaidCycles.some((cycle) => cycle.totalDue === undefined),
+    nextDueISO: dueDates[0] ?? null,
+  };
+}
+
 /** 'X unpaid · ₹Y due' — the birds-eye total across all cards.
  *
  * Per-cycle amount: the bank's own totalDue when the statement carried
@@ -27,22 +62,8 @@ import { formatINR } from './money';
  * presented as "the total" is worse than no total at all, the same
  * sentinels-are-not-zero reasoning as CardTile's own "Amount unknown". */
 export function unpaidSummary(entries: CardWithCycle[]): string {
-  // cycleNeedsPayment, not a bare paidAt check: a ₹0 bill or a no-spend
-  // cycle isn't "unpaid", it's simply not owed (see lib/cycles.ts).
-  const unpaidCycles = entries
-    .map((entry) => entry.cycle)
-    .filter((cycle): cycle is CycleRecord => cycle !== null)
-    .filter((cycle) => cycleNeedsPayment(cycle));
-
-  if (unpaidCycles.length === 0) return 'All caught up';
-
-  const amounts = unpaidCycles.map((cycle) => cycle.totalDue ?? cycle.spend);
-  if (amounts.some((amount) => amount === undefined)) {
-    return `${unpaidCycles.length} unpaid`;
-  }
-
-  const total = amounts.reduce((sum: number, a) => sum + (a ?? 0), 0);
-  const isEstimate = unpaidCycles.some((cycle) => cycle.totalDue === undefined);
-  const prefix = isEstimate ? '~' : '';
-  return `${unpaidCycles.length} unpaid · ${prefix}${formatINR(total)} due`;
+  const { count, total, isEstimate } = unpaidTotals(entries);
+  if (count === 0) return 'All caught up';
+  if (total === null) return `${count} unpaid`;
+  return `${count} unpaid · ${isEstimate ? '~' : ''}${formatINR(total)} due`;
 }

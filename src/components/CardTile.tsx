@@ -147,7 +147,7 @@ function CardTile({
         </span>
       </div>
 
-      <p className="card-amount">
+      <p className="card-amount amount">
         {/* An absent totalDue is not ₹0 — it's a fact the parser never
             recovered from this card's statements, and must read as
             "unknown" rather than silently rendering as free money. But
@@ -164,15 +164,17 @@ function CardTile({
       </p>
 
       {status !== null && (
-        // Color comes from the matching --tone-* custom property (see
-        // index.css) rather than a per-tone class — one rule in CSS, one
-        // lookup here, instead of five near-identical `.tone-x { color }`
-        // rules.
-        <p
-          className="due-status"
-          style={{ color: `var(--tone-${status.tone})` }}
-        >
-          {status.label}
+        <p className="due-status">
+          {/* Styled per tone in index.css; unpaid tones carry the hatched
+              "not paid yet" dot. */}
+          <span className="status-pill" data-tone={status.tone}>
+            {(status.tone === 'ok' ||
+              status.tone === 'soon' ||
+              status.tone === 'overdue') && (
+              <span className="status-dot hatch" aria-hidden="true" />
+            )}
+            {status.label}
+          </span>
         </p>
       )}
 

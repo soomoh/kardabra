@@ -105,6 +105,7 @@ function CardHeader({
             autoFocus
           />
           <button
+            className="primary"
             onClick={() => void handleRenameSave().catch(reportError)}
             disabled={nicknameDraft.trim() === ''}
           >
@@ -113,7 +114,9 @@ function CardHeader({
           <button onClick={() => setNicknameDraft(null)}>Cancel</button>
         </div>
       )}
-      {card.dueDay !== undefined && <p>Due day: {card.dueDay}</p>}
+      {card.dueDay !== undefined && (
+        <p className="muted">Due on day {card.dueDay} of each month</p>
+      )}
 
       {nicknameDraft === null && !confirmingDelete && (
         <div className="import-actions">
@@ -194,6 +197,7 @@ function CardHeader({
                 autoFocus
               />
               <button
+                className="primary"
                 onClick={() => void handleSaveFeeAmount().catch(reportError)}
               >
                 Save

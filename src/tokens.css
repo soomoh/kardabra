@@ -1,0 +1,166 @@
+/* Kardabra brand tokens — "sodium lamp" (light) / "bottle green" (dark).
+ * The single source of truth for colour, type, spacing, radius and motion;
+ * guidelines and measured contrast live in .claude/DESIGN.md. Components
+ * read these names only, never raw values.
+ *
+ * Roles, same in both themes: green = settled/primary, amber/apricot =
+ * needs you, hatching = not paid yet. */
+
+/* Self-hosted (no runtime network): Latin + Latin Extended only, which
+ * covers ₹ (U+20B9). Variable weight, one file per subset. */
+@font-face {
+  font-family: 'Figtree';
+  src: url('@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2')
+    format('woff2');
+  font-weight: 300 900;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Figtree';
+  src: url('@fontsource-variable/figtree/files/figtree-latin-ext-wght-normal.woff2')
+    format('woff2');
+  font-weight: 300 900;
+  font-display: swap;
+  unicode-range:
+    U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2')
+    format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-ext-wght-normal.woff2')
+    format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range:
+    U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* Type */
+  --font-body: 'Figtree', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Figtree', system-ui, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.5rem;
+
+  /* Space (4px grid) */
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+
+  /* Radius: varies with hierarchy — controls are pills, rows soft, panels round. */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-full: 999px;
+
+  /* Size floors */
+  --control-height: 2.5rem;
+  --control-height-lg: 2.75rem;
+
+  /* Motion: quiet — state changes only. */
+  --dur: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Colour — light: sodium lamp */
+  --paper: #efe4c8;
+  --surface: #f8f0dc;
+  --ink: #2b2416;
+  --ink-muted: #6a5a3c;
+  --line: #e2d4b0;
+  --line-strong: #8a7650;
+  --primary: #23523a;
+  --primary-hover: #1a4230;
+  --on-primary: #f8f0dc;
+  --hero-bg: #23523a;
+  --hero-ink: #e6ecd9;
+  --hero-num: #f3b544;
+  --attention: #b0681a;
+  --attention-ink: #865008;
+  --attention-bg: #f5d58a;
+  --danger: #a3341f;
+  --focus: #23523a;
+  --tooltip-shadow: 0 6px 18px oklch(30% 0.04 80 / 0.18);
+
+  /* Due-status tones (lib/dueStatus.ts `tone`) */
+  --tone-paid: var(--primary);
+  --tone-ok: var(--ink-muted);
+  --tone-soon: var(--attention-ink);
+  --tone-overdue: var(--danger);
+  --tone-unknown: var(--ink-muted);
+
+  /* Chart: fixed categorical order, card 1 = series 1. Validated with the
+   * dataviz validator against --surface (contrast WARN on 2, 6, 8 — relief
+   * is the table view; segments also carry 2px gaps and a legend). */
+  --chart-surface: var(--surface);
+  --series-1: #1f6f3d;
+  --series-2: #e49839;
+  --series-3: #914373;
+  --series-4: #06999a;
+  --series-5: #be563d;
+  --series-6: #92ae5f;
+  --series-7: #00638f;
+  --series-8: #cdb144;
+  --series-other: #9a8a68;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Colour — dark: bottle green and apricot */
+    --paper: #132a20;
+    --surface: #1b3629;
+    --ink: #e8f0e4;
+    --ink-muted: #a3b8aa;
+    --line: #2a4a3a;
+    --line-strong: #6b8f7a;
+    --primary: #9ed8b2;
+    --primary-hover: #b6e4c5;
+    --on-primary: #0f2219;
+    --hero-bg: #1f4231;
+    --hero-ink: #e8f0e4;
+    --hero-num: #f2b58c;
+    --attention: #f2b58c;
+    --attention-ink: #f2b58c;
+    --attention-bg: #3a2e22;
+    --danger: #f0a08f;
+    --focus: #9ed8b2;
+    --tooltip-shadow: 0 6px 18px oklch(10% 0.03 160 / 0.5);
+
+    /* Validated against --surface: CVD WARN 7.2 on 1↔2 (floor band, legal
+     * with the gaps, legend and table view). */
+    --series-1: #43aa7a;
+    --series-2: #cc7e46;
+    --series-3: #25a6a6;
+    --series-4: #a5952f;
+    --series-5: #c66295;
+    --series-6: #779a45;
+    --series-7: #3590bf;
+    --series-8: #c86556;
+    --series-other: #7f9688;
+  }
+}

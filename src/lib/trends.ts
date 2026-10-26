@@ -28,6 +28,8 @@ export interface TrendSeries {
   cardId: string | null;
   nickname: string;
   values: number[];
+  /** Per period: the bill for that month is still unpaid (drawn hatched). */
+  unpaid: boolean[];
 }
 
 export interface MonthlyTrends {
@@ -62,7 +64,7 @@ function trailingPeriods(latestPeriod: string): string[] {
 }
 
 /** A (card, period) map key; neither part can contain a space. */
-function cycleKey(cardId: string, period: string): string {
+export function cycleKey(cardId: string, period: string): string {
   return `${cardId} ${period}`;
 }
 
@@ -70,6 +72,8 @@ function cycleKey(cardId: string, period: string): string {
 export function monthlyTrends(
   cards: TrendsCard[],
   cycles: TrendsCycle[],
+  /** cycleKey()s of the bills still unpaid. */
+  unpaidKeys: ReadonlySet<string> = new Set(),
 ): MonthlyTrends {
   if (cycles.length === 0) {
     return { periods: [], series: [], monthTotals: [] };
@@ -101,10 +105,17 @@ export function monthlyTrends(
     );
   }
 
+  function unpaidFor(cardIds: string[]): boolean[] {
+    return periods.map((period) =>
+      cardIds.some((id) => unpaidKeys.has(cycleKey(id, period))),
+    );
+  }
+
   const series: TrendSeries[] = namedCards.map((card) => ({
     cardId: card.id,
     nickname: card.nickname,
     values: valuesFor(card.id),
+    unpaid: unpaidFor([card.id]),
   }));
 
   if (foldedCards.length > 0) {
@@ -114,7 +125,12 @@ export function monthlyTrends(
         0,
       ),
     );
-    series.push({ cardId: null, nickname: 'Other', values: foldedValues });
+    series.push({
+      cardId: null,
+      nickname: 'Other',
+      values: foldedValues,
+      unpaid: unpaidFor(foldedCards.map((card) => card.id)),
+    });
   }
 
   const monthTotals = periods.map((_, periodIndex) =>
@@ -127,7 +143,7 @@ export function monthlyTrends(
 /** Month totals over the series still shown after the legend toggles some
  * cards off. Other cards' values and colours never change. */
 export function visibleMonthTotals(
-  series: TrendSeries[],
+  series: Pick<TrendSeries, 'cardId' | 'values'>[],
   excludedCardIds: ReadonlySet<string>,
 ): number[] {
   const visible = series.filter(

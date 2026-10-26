@@ -107,7 +107,10 @@ function StatementTransactions({
           </div>
         ) : (
           <div className="import-actions">
-            <button onClick={() => void saveOverride().catch(reportError)}>
+            <button
+              className="primary"
+              onClick={() => void saveOverride().catch(reportError)}
+            >
               Save
             </button>
             <button onClick={() => setFixMode({ mode: 'view' })}>Cancel</button>
@@ -120,7 +123,7 @@ function StatementTransactions({
             {selecting && <th></th>}
             <th>Date</th>
             <th>Payee</th>
-            <th>Amount</th>
+            <th className="num">Amount</th>
           </tr>
         </thead>
         <tbody>
@@ -145,7 +148,11 @@ function StatementTransactions({
                   <span className="credit-label"> · bill payment</span>
                 )}
               </td>
-              <td className={txn.amount < 0 ? 'amount-debit' : 'amount-credit'}>
+              <td
+                className={
+                  txn.amount < 0 ? 'num amount-debit' : 'num amount-credit'
+                }
+              >
                 {formatSignedINR(txn.amount)}
               </td>
             </tr>
