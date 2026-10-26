@@ -6,6 +6,7 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { actionableCycle } from '../lib/cycles';
+import { cycleDueDateISO, isValidDueDay, previousPeriod } from '../lib/dates';
 import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
 import {
   identifyPaymentIndices,
@@ -240,9 +241,18 @@ export async function recomputeCardSpends(
     .sort((a, b) => a.period.localeCompare(b.period));
 
   let priorExpectedDue: number | null = null;
+  let priorPeriod: string | null = null;
   for (const statement of statements) {
+    // Only the previous month's bill is what this payment paid; across a
+    // missing month there's nothing reliable to match against.
+    if (priorPeriod !== previousPeriod(statement.period))
+      priorExpectedDue = null;
+    priorPeriod = statement.period;
     const cycle = await db.get('cycles', [cardId, statement.period]);
-    if (cycle === undefined) continue;
+    if (cycle === undefined) {
+      priorExpectedDue = null;
+      continue;
+    }
 
     const txns = await getTransactionsForStatement(db, statement.id);
     const paymentIndices = identifyPaymentIndices(txns, {
@@ -339,6 +349,57 @@ export async function putSetting(
   value: unknown,
 ): Promise<void> {
   await db.put('settings', { key, value });
+}
+
+/** Change a card's due day and re-project the due dates that came from it
+ * (statements that printed none); printed dates stay. One transaction, so
+ * the card and its bills never disagree. No-op for a missing card. */
+export async function setCardDueDay(
+  db: IDBPDatabase<KardabraSchema>,
+  cardId: string,
+  dueDay: number,
+): Promise<void> {
+  // The UI validates first; a bad day here is a programmer's mistake.
+  if (!isValidDueDay(dueDay)) throw new RangeError(`Invalid due day ${dueDay}`);
+  const tx = db.transaction(
+    ['cards', 'statements', 'transactions', 'cycles'],
+    'readwrite',
+  );
+  const card = await tx.objectStore('cards').get(cardId);
+  if (card === undefined) {
+    await tx.done;
+    return;
+  }
+  await tx.objectStore('cards').put({ ...card, dueDay });
+
+  const cardRange = IDBKeyRange.bound([cardId, ''], [cardId, '\uffff']);
+  const statements = await tx
+    .objectStore('statements')
+    .index('by-card-period')
+    .getAll(cardRange);
+  for (const statement of statements) {
+    if (statement.dueDateISO !== undefined) continue;
+    const cycle = await tx
+      .objectStore('cycles')
+      .get([cardId, statement.period]);
+    if (cycle === undefined) continue;
+    let anchorISO = statement.statementDateISO ?? null;
+    if (anchorISO === null) {
+      const txns = await tx
+        .objectStore('transactions')
+        .index('by-statement')
+        .getAll(statement.id);
+      for (const txn of txns) {
+        if (anchorISO === null || txn.dateISO > anchorISO)
+          anchorISO = txn.dateISO;
+      }
+    }
+    await tx.objectStore('cycles').put({
+      ...cycle,
+      dueDateISO: cycleDueDateISO(undefined, anchorISO, dueDay),
+    });
+  }
+  await tx.done;
 }
 
 /** Delete a card with all its statements, transactions and cycles in one

@@ -22,7 +22,7 @@ import {
   upsertCycle,
   recomputeCardSpends,
 } from '../db/db';
-import { isValidDueDay, nextDueDateWithGraceISO } from '../lib/dates';
+import { cycleDueDateISO, isValidDueDay } from '../lib/dates';
 import { netSpend, identifyPaymentIndices } from '../lib/spend';
 import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
 import {
@@ -313,24 +313,21 @@ function buildCycleRecord(
 ): CycleRecord {
   const cardId = card.id;
   const { dueDay } = card;
-  // The date the bank printed wins. Without one, project from the user's
-  // `dueDay` relative to this statement's dateline (with a minimum grace gap —
-  // see nextDueDateWithGraceISO for the mis-projection it prevents); with
-  // neither, the due date stays the null sentinel (unknown) rather than
-  // failing the commit.
+  // Projecting from the statement date, else the last transaction: see
+  // cycleDueDateISO, and nextDueDateWithGraceISO for the grace gap.
   const anchorDateISO =
     summary.statementDateISO ?? maxTransactionDateISO(parsed.transactions);
-  const dueDateISO =
-    summary.paymentDueDateISO ??
-    (dueDay !== undefined && anchorDateISO !== null
-      ? nextDueDateWithGraceISO(anchorDateISO, dueDay)
-      : null);
+  const dueDateISO = cycleDueDateISO(
+    summary.paymentDueDateISO,
+    anchorDateISO,
+    dueDay,
+  );
 
   // Spend = debits minus cashback/refund-style credits, with the
   // identified bill-payment SET excluded (see lib/spend.ts for the
   // classification ladder and its safety reasoning). Always computable
   // even when the bank's export carries no summary block at all — the
-  // dashboard shows it as "Spend ₹X" when totalDue is absent, which is
+  // dashboard shows it as "Spent this cycle ₹X" when totalDue is absent, which is
   // honest (spend is a fact) where inventing a bill amount would not be.
   //
   // This is only a PROVISIONAL figure: `priorExpectedDue: null` and

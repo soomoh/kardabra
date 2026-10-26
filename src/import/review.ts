@@ -4,6 +4,11 @@
  * what a blank card name means.
  */
 
+import {
+  BANK_NAMES,
+  bankFromFileName,
+  confirmedIssuer,
+} from '../lib/bankDetect';
 import { isValidDueDay } from '../lib/dates';
 import { cardInputKey, type FileOutcome } from './plan';
 import type { CardRecord } from '../db/schema';
@@ -22,6 +27,21 @@ export function suggestedName(outcome: FileOutcome): string | undefined {
   return outcome.kind === 'new-statement' && outcome.cardRef.kind === 'new'
     ? outcome.cardRef.suggestedNickname
     : undefined;
+}
+
+/** Which bank a new card's statement is from, to help the user name it:
+ * "HDFC Bank" when the statement says so (parser/issuer.ts), "likely HDFC
+ * Bank" when only its file name suggests it (lib/bankDetect.ts), else null. */
+export function issuerHint(outcome: FileOutcome): string | null {
+  if (outcome.kind !== 'new-statement' && outcome.kind !== 'duplicate')
+    return null;
+  const { parsed } = outcome;
+  const sure = confirmedIssuer(parsed);
+  if (sure !== undefined) return sure;
+  // The statement and its file name disagree: say nothing rather than guess.
+  if (parsed.issuer !== undefined) return null;
+  const bank = bankFromFileName(parsed.fileName);
+  return bank === null ? null : `likely ${BANK_NAMES[bank]}`;
 }
 
 /** Files that ask a question, by file name. Several files can share one new

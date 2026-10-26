@@ -67,6 +67,9 @@ export interface ParsedStatement {
   /** ISO 4217 code inferred from the statement text (₹/Rs/INR → 'INR');
    * 'INR' when nothing says otherwise. */
   currency: string;
+  /** The issuing bank, when the statement's header names exactly one
+   * (parser/issuer.ts); absent otherwise. */
+  issuer?: string;
   summary: StatementSummary;
   transactions: Transaction[];
   warnings: ParseWarning[];

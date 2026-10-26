@@ -6,6 +6,7 @@
  * callers that want just one stage.
  */
 
+import { issuerFromRows } from './issuer';
 import { looksLikeExcel, loadExcelRows } from './excel';
 import { parseDelimited } from './csv';
 import { findTableHeader } from './table';
@@ -65,8 +66,17 @@ export function parseRows(
   );
   const last4 = accountLast4(rows, locale.dateOrder);
   const currency = inferCurrency(rows, found);
+  const issuer = issuerFromRows(rows, found.headerAt);
 
-  return { fileName, last4, currency, summary, transactions, warnings };
+  return {
+    fileName,
+    last4,
+    currency,
+    ...(issuer !== undefined && { issuer }),
+    summary,
+    transactions,
+    warnings,
+  };
 }
 
 /**

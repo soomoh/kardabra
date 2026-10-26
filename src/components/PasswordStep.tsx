@@ -52,6 +52,8 @@ function PasswordStep({
   }, [retry]);
 
   const dob = parseDob(dobText);
+  const [dobLeft, setDobLeft] = useState(false);
+  const dobInvalid = dobLeft && dobText.trim() !== '' && dob === null;
   const hasDetails = name.trim() !== '' && dob !== null;
   const typed = passwords.filter((p) => p !== '');
   const canSubmit = !unlocking && (hasDetails || typed.length > 0);
@@ -97,15 +99,15 @@ function PasswordStep({
         </label>
         <label>
           Date of birth
-          {dobText.trim() !== '' && dob === null && (
-            <span className="error-text"> — use DD/MM/YYYY</span>
-          )}
+          {dobInvalid && <span className="error-text">: use DD/MM/YYYY</span>}
           <input
             type="text"
             inputMode="numeric"
             value={dobText}
             onChange={(e) => setDobText(e.target.value)}
-            aria-invalid={dobText.trim() !== '' && dob === null}
+            // Judged once the field is left, not on the first keystroke.
+            onBlur={() => setDobLeft(true)}
+            aria-invalid={dobInvalid}
             placeholder="DD/MM/YYYY"
             autoComplete="off"
           />
@@ -122,10 +124,9 @@ function PasswordStep({
               <input
                 ref={last4Ref}
                 type="text"
-                inputMode="numeric"
                 value={last4Text}
                 onChange={(e) => setLast4Text(e.target.value)}
-                placeholder="4242"
+                placeholder="1234"
                 aria-describedby="last4-hint"
                 autoComplete="off"
               />
@@ -139,7 +140,7 @@ function PasswordStep({
           <fieldset className="password-list">
             <legend>Passwords you know</legend>
             <p className="muted">
-              Add as many as you like — we'll try each one on every file.
+              Add as many as you like. Each one is tried on every file.
             </p>
             {passwords.map((password, i) => (
               <input
@@ -192,7 +193,7 @@ function PasswordStep({
             return (
               <li key={fileName}>
                 {fileName}
-                {bank && <span className="muted"> · {BANK_NAMES[bank]}</span>}
+                {bank && <span className="muted"> ({BANK_NAMES[bank]})</span>}
               </li>
             );
           })}

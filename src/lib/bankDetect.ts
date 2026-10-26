@@ -79,3 +79,17 @@ export function statementsSummary(fileNames: string[]): string {
     ? `${noun} from ${BANK_NAMES[distinct[0]]}`
     : `${noun} from ${distinct.length} banks`;
 }
+
+/** The issuer a statement names in its own header (parser/issuer.ts),
+ * unless its file name clearly points at a different bank — then neither
+ * is trusted. Undefined when not sure. */
+export function confirmedIssuer(statement: {
+  issuer?: string;
+  fileName: string;
+}): string | undefined {
+  if (statement.issuer === undefined) return undefined;
+  const fromName = bankFromFileName(statement.fileName);
+  return fromName === null || BANK_NAMES[fromName] === statement.issuer
+    ? statement.issuer
+    : undefined;
+}

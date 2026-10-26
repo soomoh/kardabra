@@ -73,6 +73,12 @@ p {
 
 /* --- Layout --- */
 
+/* Keyboard focus and scrolled-to fields stay clear of the review page's
+   sticky action bar. */
+html {
+  scroll-padding-bottom: 8rem;
+}
+
 .app {
   max-width: 60rem;
   margin: 0 auto;
@@ -82,31 +88,123 @@ p {
   overflow-wrap: anywhere;
 }
 
-.app-nav {
+.app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2xs);
+  gap: var(--space-2xs) var(--space-xs);
   margin-bottom: var(--space-lg);
 }
-.app-nav-brand {
+.app-nav {
+  display: flex;
+  gap: var(--space-2xs);
+}
+/* Phones: wordmark and theme on the first row, the nav links below. */
+@media (max-width: 30rem) {
+  .app-nav {
+    order: 1;
+    flex-basis: 100%;
+  }
+}
+.app-brand {
   margin-right: auto;
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: 750;
   letter-spacing: -0.02em;
 }
-.app-nav button {
-  border-color: transparent;
+/* Nav items are links (routes), drawn as the outlined pill without its
+   border. */
+.app-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: 0 var(--space-md);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.app-nav a:hover {
+  background: var(--surface);
+}
+.app-nav a:active {
+  transform: translateY(1px);
 }
 /* Styled off aria-current (not a parallel "active" class) so the visual
    highlight and the assistive-tech announcement come from one attribute
    and can't disagree. */
-.app-nav button[aria-current='page'] {
+.app-nav a[aria-current='page'] {
   background: var(--surface);
-  border-color: var(--line);
+  border-color: var(--line-strong);
 }
 
 /* --- Controls --- */
+
+/* Read by screen readers, not drawn; stays focusable (radios). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+}
+.theme-toggle label {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.theme-toggle label:hover {
+  color: var(--ink);
+}
+/* The ring, not the faint fill, carries the state (3:1 on paper). */
+.theme-toggle label:has(:checked) {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+/* High-contrast mode drops fills and border colours; mark the pick and the
+   current page with system colours instead. */
+@media (forced-colors: active) {
+  .theme-toggle label:has(:checked) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .app-nav a[aria-current='page'] {
+    border-color: Highlight;
+  }
+}
+.theme-toggle label:has(:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
 
 button {
   display: inline-flex;
@@ -124,7 +222,9 @@ button {
   cursor: pointer;
   transition:
     background-color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 button:hover {
   background: var(--surface);
@@ -159,6 +259,22 @@ button.danger {
   border-color: var(--danger);
   color: var(--danger);
 }
+/* Disabled wins over every variant and its hover. */
+button:disabled:hover,
+button.danger:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-muted);
+}
+button.primary:disabled:hover {
+  border-color: var(--line);
+  background: var(--line);
+}
+.icon-button:disabled,
+.icon-button:disabled:hover {
+  border-color: transparent;
+  color: var(--ink-muted);
+}
 
 .link-button {
   min-height: auto;
@@ -187,15 +303,21 @@ button.danger {
 }
 
 .back-link {
-  min-height: auto;
+  display: inline-block;
+  /* Keeps the arrow apart when touch sizing makes this a flex box (which
+     drops the space between the arrow and the text). */
+  gap: var(--space-2xs);
+  transition: color var(--dur) var(--ease);
   margin-bottom: var(--space-md);
   padding: var(--space-2xs) 0;
-  border: none;
   color: var(--ink-muted);
+  font-weight: 600;
+  text-decoration: none;
 }
 .back-link:hover {
-  background: none;
   color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 input[type='text'],
@@ -220,17 +342,29 @@ select:focus-visible {
   border-color: var(--focus);
   outline-offset: 1px;
 }
+/* Full muted ink: 5.9:1 on surface (lighter fails 4.5:1). */
 input::placeholder {
   color: var(--ink-muted);
-  opacity: 0.8;
+  opacity: 1;
 }
-input[aria-invalid='true'] {
+input[aria-invalid='true'],
+select[aria-invalid='true'] {
   border-color: var(--danger);
 }
+input:disabled,
+select:disabled,
+input:disabled:hover,
+select:disabled:hover {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
 input[type='checkbox'] {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
   accent-color: var(--primary);
+  cursor: pointer;
 }
 /* The popup list takes its colours from the option elements themselves
    (Chrome rendered it white-on-white in dark mode otherwise). */
@@ -303,9 +437,10 @@ input[type='number']::-webkit-inner-spin-button {
 .status-pill[data-tone='overdue'] .status-dot {
   --hatch-color: var(--danger);
 }
+/* Settled is quiet: what still needs you should be the loudest thing. */
 .status-pill[data-tone='paid'] {
-  background: var(--primary);
-  color: var(--on-primary);
+  border-color: var(--line);
+  color: var(--primary);
 }
 .status-pill[data-tone='unknown'] {
   padding: 0;
@@ -350,6 +485,15 @@ input[type='number']::-webkit-inner-spin-button {
   background: var(--hero-bg);
   color: var(--hero-ink);
 }
+.hero-heading {
+  margin: 0;
+  font: inherit;
+  letter-spacing: normal;
+}
+.hero-label,
+.hero-heading .hero-amount {
+  display: block;
+}
 .hero-label {
   margin: 0;
   font-size: var(--text-sm);
@@ -372,6 +516,17 @@ input[type='number']::-webkit-inner-spin-button {
 }
 .hero-sub strong {
   color: var(--hero-num);
+}
+/* What's still to come and what to pay now: quieter than the total. */
+.hero-notes {
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-sm) 0 0;
+  border-top: 1px solid var(--hero-line);
+  list-style: none;
+  font-size: var(--text-sm);
+}
+.hero-notes li + li {
+  margin-top: var(--space-2xs);
 }
 
 .empty-state {
@@ -424,19 +579,11 @@ input[type='number']::-webkit-inner-spin-button {
    tile, so a click anywhere opens the card. Its focus ring is drawn on
    that layer, around the tile. */
 .card-open {
+  display: inline-flex;
+  align-items: center;
   min-height: 2.25rem;
-  padding: 0;
-  border: none;
-  font-weight: inherit;
-  text-align: left;
-}
-.card-open:hover {
-  background: none;
-}
-/* No press nudge: a transform would make the button the containing block
-   of its ::after, shrinking the click layer mid-click so the click is lost. */
-.card-open:active {
-  transform: none;
+  color: inherit;
+  text-decoration: none;
 }
 .card-open::after {
   content: '';
@@ -457,6 +604,13 @@ input[type='number']::-webkit-inner-spin-button {
 .card-tile input {
   position: relative;
   z-index: 1;
+}
+/* Says what the figure is; the figure stays the loudest thing. */
+.card-amount-label {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 .card-amount {
   margin: 0;
@@ -628,9 +782,12 @@ h1[tabindex='-1']:focus {
 .file-summary {
   margin-top: var(--space-lg);
 }
-.file-summary summary,
-.review-group summary {
+.file-summary summary {
   cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.file-summary summary:hover {
+  color: var(--ink);
 }
 .file-summary summary {
   min-height: 1.5rem;
@@ -646,16 +803,65 @@ h1[tabindex='-1']:focus {
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
-.review-group > summary {
+/* Always visible: the card's name and, for a new card, its badge. */
+.review-group-head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2xs) var(--space-sm);
-  min-height: 2.5rem;
-  padding: var(--space-2xs) 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  min-height: var(--control-height);
 }
-.review-group > summary::marker {
+/* A new card stands out from the cards already on the dashboard: it is
+   the one moment to name it. */
+.review-group.is-new {
+  border: 2px solid var(--attention);
+}
+.review-group-head .badge {
+  flex: none;
+}
+.name-field {
+  margin-bottom: var(--space-sm);
+}
+.name-field input {
+  max-width: 24rem;
+}
+/* The statements: open by default, collapsed in a big batch. */
+.review-statements > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--control-height);
   color: var(--ink-muted);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.review-statements > summary:hover {
+  color: var(--ink);
+}
+.review-statements > summary::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur) var(--ease);
+}
+.review-statements[open] > summary::before {
+  transform: rotate(45deg);
+}
+.review-statements > summary::-webkit-details-marker {
+  display: none;
+}
+.review-statements[open] > summary {
+  margin-bottom: var(--space-xs);
+}
+/* A group titled outside a <summary> gets the summary's spacing. */
+.review-group-heading.review-group-title {
+  margin-bottom: var(--space-sm);
+  padding: var(--space-2xs) 0;
 }
 .review-group-title {
   margin: 0;
@@ -663,15 +869,8 @@ h1[tabindex='-1']:focus {
   font-size: var(--text-lg);
   font-weight: 650;
 }
-.review-group[open] > summary {
+.review-group .callout {
   margin-bottom: var(--space-sm);
-}
-.review-group .callout,
-.group-field {
-  margin-bottom: var(--space-sm);
-}
-.group-field input {
-  max-width: 24rem;
 }
 .review-group .plan-row {
   background: var(--paper);
@@ -708,7 +907,7 @@ h1[tabindex='-1']:focus {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  margin: var(--space-md) calc(-1 * var(--space-md)) 0;
+  margin: var(--space-md) 0 0;
   padding: var(--space-sm) var(--space-md);
   border-top: 1px solid var(--line);
   background: var(--paper);
@@ -740,7 +939,28 @@ h1[tabindex='-1']:focus {
 .card-detail-header {
   margin-bottom: var(--space-lg);
 }
+/* Name with its rename/delete icons beside it, as on the tiles: the
+   statements, not the settings, come next. */
+.card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+.card-title-row h1 {
+  margin: 0;
+}
+.delete-confirm {
+  margin-top: var(--space-sm);
+}
+.delete-confirm p {
+  margin: 0;
+}
+.due-day-row {
+  margin-top: var(--space-xs);
+}
 .rename-row,
+.due-day-row,
 .fee-label-row {
   display: flex;
   flex-wrap: wrap;
@@ -749,6 +969,15 @@ h1[tabindex='-1']:focus {
 }
 .fee-label-row {
   margin-top: var(--space-md);
+}
+.due-day-row input {
+  width: 5rem;
+}
+.due-day-row .due-day-hint,
+.due-day-row .error-text {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-sm);
 }
 .fee-discrepancy,
 .charge-hint {
@@ -769,6 +998,14 @@ h1[tabindex='-1']:focus {
   padding: 0;
   list-style: none;
 }
+/* A month with no statement: a quiet dashed placeholder, not a row. */
+.statement-gap {
+  padding: var(--space-xs) var(--space-md);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
 .statement-row {
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -785,10 +1022,13 @@ h1[tabindex='-1']:focus {
 .statement-row:hover {
   border-color: var(--line-strong);
 }
+/* 2px without moving the content: the extra pixel comes out of padding. */
 .statement-row.selected {
+  padding: calc(var(--space-xs) - 1px) calc(var(--space-md) - 1px);
   border: 2px solid var(--primary);
 }
-.statement-period {
+.statement-period,
+.statement-due {
   font-weight: 650;
 }
 
@@ -817,6 +1057,15 @@ h1[tabindex='-1']:focus {
   border-bottom: 1px solid var(--line);
   text-align: left;
 }
+/* Text lines up with the headings and panel edges, not 12px inside. */
+.txn-table th:first-child,
+.txn-table td:first-child {
+  padding-left: 0;
+}
+.txn-table th:last-child,
+.txn-table td:last-child {
+  padding-right: 0;
+}
 .txn-table th,
 .txn-table .nowrap {
   white-space: nowrap;
@@ -842,10 +1091,6 @@ h1[tabindex='-1']:focus {
 .amount-credit {
   color: var(--primary);
   font-weight: 600;
-}
-.credit-label {
-  color: var(--ink-muted);
-  font-size: var(--text-sm);
 }
 
 /* --- Spend trends chart --- */
@@ -887,11 +1132,15 @@ h1[tabindex='-1']:focus {
   background: none;
   text-decoration: underline;
 }
-.legend-chip[aria-pressed='true'] {
+.legend-chip[aria-pressed='false'] {
   color: var(--ink-muted);
   text-decoration: line-through;
 }
-.legend-chip[aria-pressed='true'] .legend-swatch {
+.legend-chip[aria-pressed='false']:hover {
+  color: var(--ink);
+  text-decoration: line-through underline;
+}
+.legend-chip[aria-pressed='false'] .legend-swatch {
   background: transparent !important;
 }
 .legend-chip:disabled {
@@ -905,6 +1154,7 @@ h1[tabindex='-1']:focus {
   border: 2px solid var(--swatch);
   border-radius: 0.25rem;
 }
+.trends-tooltip .legend-swatch:not(.hatch),
 .legend-chip .legend-swatch {
   background: var(--swatch);
 }
@@ -928,16 +1178,29 @@ h1[tabindex='-1']:focus {
   display: block;
   font-family: var(--font-body);
 }
+/* Segments are drawing only; the month column (.trends-hit) is the target. */
 .trends-segment {
-  cursor: pointer;
+  pointer-events: none;
 }
-.trends-segment:focus-visible {
+.trends-hit {
+  cursor: pointer;
+  outline: none;
+}
+/* The column being read: a soft band behind its bar; focus adds a ring. */
+.trends-band {
+  fill: var(--paper);
+  stroke: var(--line-strong); /* 3:1: the column cue doesn't rely on outline */
+  stroke-width: 1;
+}
+.trends-hit:focus-visible {
   outline: 3px solid var(--focus);
-  outline-offset: 1px;
+  outline-offset: -3px;
 }
 .trends-tooltip {
   position: absolute;
   z-index: 1;
+  transform: translateY(-100%);
+  min-width: 12rem;
   padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -946,6 +1209,29 @@ h1[tabindex='-1']:focus {
   font-size: var(--text-sm);
   white-space: nowrap;
   pointer-events: none;
+}
+.trends-tooltip ul {
+  margin: var(--space-2xs) 0;
+  padding: 0;
+  list-style: none;
+}
+.trends-tooltip li,
+.trends-tooltip-total {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.trends-tooltip li .amount,
+.trends-tooltip-total .amount {
+  margin-left: auto;
+  padding-left: var(--space-md);
+}
+.trends-tooltip-title {
+  font-weight: 650;
+}
+.trends-tooltip-total {
+  padding-top: var(--space-2xs);
+  border-top: 1px solid var(--line);
 }
 
 /* --- Database status, error banner, totals warning --- */
@@ -977,4 +1263,50 @@ h1[tabindex='-1']:focus {
   border-radius: var(--radius-md);
   background: var(--attention-bg);
   color: var(--attention-ink);
+}
+
+/* A checkbox's hit area: padding around the box makes 44px. */
+.check-hit {
+  display: inline-flex;
+  padding: var(--space-xs);
+  /* Vertical only: the first column has no left padding to borrow. */
+  margin-block: calc(-1 * var(--space-xs));
+  cursor: pointer;
+}
+
+/* --- Touch --- */
+
+/* Fingers need 44px (Apple/WCAG AAA guidance); a mouse doesn't, so the
+   desktop keeps its tighter 40px/32px controls. */
+@media (max-width: 30rem), (pointer: coarse) {
+  button,
+  input[type='text'],
+  input[type='password'],
+  input[type='number'],
+  select,
+  .app-nav a,
+  .link-button,
+  .back-link,
+  .card-open,
+  .file-summary summary,
+  .review-statements > summary {
+    min-height: var(--control-height-lg);
+  }
+  .link-button,
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+  }
+  .icon-button,
+  .theme-toggle label {
+    width: var(--control-height-lg);
+    height: var(--control-height-lg);
+  }
+  .legend-chip {
+    min-height: var(--control-height-lg);
+  }
+  .file-summary summary {
+    display: flex;
+    align-items: center;
+  }
 }

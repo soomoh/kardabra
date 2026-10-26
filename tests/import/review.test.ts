@@ -9,6 +9,7 @@ import type { CommitUserInput } from '../../src/import/commit';
 import {
   cardQuestions,
   importCount,
+  issuerHint,
   importedNotice,
   planIsComplete,
   questionOwners,
@@ -292,5 +293,46 @@ describe('cardQuestions and card assignments', () => {
       new Map([['x.csv', 'c3']]),
     );
     expect(o.kind).toBe('duplicate');
+  });
+});
+
+describe('issuerHint', () => {
+  const outcome = (over: Partial<ParsedStatement>) =>
+    planImport(
+      [
+        {
+          fileName: over.fileName ?? 'x.csv',
+          parsed: {
+            fileName: over.fileName ?? 'x.csv',
+            last4: '4321',
+            currency: 'INR',
+            summary: { statementDateISO: '2025-10-13' },
+            transactions: [],
+            warnings: [],
+            ...over,
+          },
+        },
+      ],
+      [],
+      [],
+    )[0];
+
+  it('is sure when the statement names its issuer', () => {
+    expect(
+      issuerHint(outcome({ issuer: 'SBI Card', fileName: 'oct.csv' })),
+    ).toBe('SBI Card');
+  });
+  it('says "likely" when only the file name suggests it', () => {
+    expect(issuerHint(outcome({ fileName: 'HDFC_Oct.csv' }))).toBe(
+      'likely HDFC Bank',
+    );
+  });
+  it('is null when the statement and its file name disagree', () => {
+    expect(
+      issuerHint(outcome({ issuer: 'SBI Card', fileName: 'HDFC_Oct.csv' })),
+    ).toBeNull();
+  });
+  it('is null when nothing says', () => {
+    expect(issuerHint(outcome({ fileName: 'statement.csv' }))).toBeNull();
   });
 });

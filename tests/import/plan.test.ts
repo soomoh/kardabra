@@ -22,6 +22,7 @@ function parsed(over: Partial<ParsedStatement>): ParsedStatement {
     fileName: over.fileName ?? 'stmt.csv',
     last4: 'last4' in over ? (over.last4 as string | null) : null,
     currency: over.currency ?? 'INR',
+    ...(over.issuer !== undefined && { issuer: over.issuer }),
     summary: over.summary ?? {},
     transactions: over.transactions ?? [],
     warnings: over.warnings ?? [],
@@ -54,6 +55,39 @@ describe('planImport — pure planning, no writes', () => {
     });
     // The statement prints its due date, so there's nothing to ask.
     expect(outcome.needsDueDay).toBe(false);
+  });
+
+  it('names a new card after the issuer its statement names, never a placeholder', () => {
+    const plan = (over: Partial<ParsedStatement>) =>
+      planImport(
+        [
+          ok(
+            parsed({
+              summary: { statementDateISO: '2025-10-13' },
+              ...over,
+            }),
+          ),
+        ],
+        [],
+        [],
+      )[0];
+    const name = (over: Partial<ParsedStatement>) => {
+      const outcome = plan(over);
+      return outcome.kind === 'new-statement' && outcome.cardRef.kind === 'new'
+        ? outcome.cardRef.suggestedNickname
+        : undefined;
+    };
+    expect(name({ last4: null, issuer: 'HDFC Bank' })).toBe('HDFC Bank card');
+    expect(name({ last4: '4321', issuer: 'HDFC Bank' })).toBe(
+      'HDFC Bank ····4321',
+    );
+    // A file name is only a guess: it never goes into the name.
+    expect(name({ last4: null, fileName: 'HDFC_Statement_Oct.csv' })).toBe(
+      'Unnamed card',
+    );
+    expect(name({ last4: '4321', fileName: 'HDFC_Oct.csv' })).toBe(
+      'Card ····4321',
+    );
   });
 
   it('asks a new card for its due day only when the statement prints none', () => {

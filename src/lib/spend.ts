@@ -24,6 +24,8 @@
  * guess is the error this module exists to avoid; the override covers it.
  */
 
+import { previousPeriod } from './dates';
+
 // Narrow on purpose: 'neft', 'imps', 'transfer' also describe refunds and
 // person-to-person credits. A false positive drops a real credit from spend
 // (overstating it); a false negative only falls through to rungs 3–4, the
@@ -103,13 +105,17 @@ export function expectedDue(
   return priorTotalDue ?? priorSpend ?? null;
 }
 
-/** expectedDue for the statement before this one, or null when there is no
- * earlier statement — the oldest one can't be reconciled. */
+/** expectedDue for the statement before `period`'s, or null when there is
+ * none to compare with: the oldest statement, or one whose previous month
+ * is missing — then "the statement before" is older than the bill this
+ * month's payment paid, and matching against it would mislead. */
 export function priorExpectedDue(
-  priorStatement: { totalDue?: number } | undefined,
+  period: string,
+  priorStatement: { period: string; totalDue?: number } | undefined,
   priorCycle: { spend?: number } | undefined,
 ): number | null {
   if (priorStatement === undefined) return null;
+  if (priorStatement.period !== previousPeriod(period)) return null;
   return expectedDue(priorStatement.totalDue, priorCycle?.spend);
 }
 

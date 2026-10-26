@@ -6,6 +6,7 @@ import { buildFeedbackReport, feedbackEntriesFor } from '../import/feedback';
 import {
   cardQuestions,
   importCount,
+  issuerHint,
   outcomeFileName,
   planIsComplete,
   questionOwners,
@@ -76,11 +77,15 @@ function ImportReview({
       // Keep the button usable and say what's missing, rather than a
       // silently disabled button.
       setShowMissing(true);
-      requestAnimationFrame(() =>
-        listRef.current
-          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
-          ?.focus(),
-      );
+      requestAnimationFrame(() => {
+        const field = listRef.current?.querySelector<HTMLElement>(
+          '[aria-invalid="true"]',
+        );
+        // It may sit in a statement list the user collapsed.
+        const list = field?.closest('details');
+        if (list) list.open = true;
+        field?.focus();
+      });
       return;
     }
     onCommit();
@@ -111,14 +116,23 @@ function ImportReview({
       ),
   ).length;
 
+  // New cards first (to be named and answered), then cards already on the
+  // dashboard. Only that split, so answering a question never moves a
+  // group out from under the user.
+  const rank = (g: ReviewGroup) => (g.cardRef.kind === 'new' ? 0 : 1);
+  const orderedGroups = groups
+    .map((group, index) => ({ group, index }))
+    .sort((a, b) => rank(a.group) - rank(b.group) || a.index - b.index)
+    .map(({ group }) => group);
+
   return (
     <div className="review">
-      <p className="muted">
+      <p className="lede">
         Nothing is saved until you press Import. Remove anything you don't want.
       </p>
 
       <div ref={listRef}>
-        {groups.map((group) => (
+        {orderedGroups.map((group) => (
           <CardGroup
             key={group.key}
             group={group}
@@ -129,6 +143,8 @@ function ImportReview({
             assignments={assignments}
             onAssign={onAssign}
             collapsed={statementRows > COLLAPSE_ABOVE}
+            // Outlining new cards only means something beside existing ones.
+            outlineNew={groups.some((g) => g.cardRef.kind === 'existing')}
             disabled={committing}
             onNickname={onNickname}
             onDueDay={onDueDay}
@@ -139,7 +155,7 @@ function ImportReview({
 
       {unreadable.length > 0 && (
         <section className="review-group">
-          <h2 className="review-group-title">
+          <h2 className="review-group-title review-group-heading">
             Couldn't read{' '}
             {unreadable.length === 1 ? 'this file' : 'these files'}
           </h2>
@@ -208,8 +224,10 @@ function ImportReview({
   );
 }
 
-/** One card's statements. Anything the card needs from the user sits in a
- * callout at the top, and forces the group open. */
+/** One card: always visible, its name (with a name field in plain view for
+ * a new card, no need to open the list), the bank when it can be told, and
+ * any answer the card needs; then its statements in a list that a big batch
+ * starts collapsed. */
 function CardGroup({
   group,
   inputs,
@@ -219,6 +237,7 @@ function CardGroup({
   assignments,
   onAssign,
   collapsed,
+  outlineNew,
   disabled,
   onNickname,
   onDueDay,
@@ -232,6 +251,7 @@ function CardGroup({
   assignments: ReadonlyMap<string, string>;
   onAssign: (fileName: string, choice: string) => void;
   collapsed: boolean;
+  outlineNew: boolean;
   disabled: boolean;
   onNickname: (key: string, value: string) => void;
   onDueDay: (key: string, value: number | null) => void;
@@ -261,47 +281,65 @@ function CardGroup({
       : typedName || suggestion || 'New card';
   const dueDay = inputs.dueDays.get(key);
   const dueHintId = useId();
+  const nameHintId = useId();
+  const nameInputId = useId();
   const dueDayInvalid =
     (dueDay !== undefined && !isValidDueDay(dueDay)) ||
     (showMissing && dueDay === undefined);
 
-  const summary =
+  const hint =
+    cardRef.kind === 'new' && !pendingCard ? issuerHint(first) : null;
+  const [listOpen, setListOpen] = useState(!collapsed || pendingCard);
+  const [askedBefore, setAskedBefore] = useState(pendingCard);
+  if (pendingCard !== askedBefore) {
+    setAskedBefore(pendingCard);
+    if (pendingCard) setListOpen(true);
+  }
+
+  const statements =
     group.toImport === 0
-      ? 'Already imported'
+      ? `${group.outcomes.length === 1 ? '1 statement' : `${group.outcomes.length} statements`}, already imported`
       : `${group.toImport === 1 ? '1 statement' : `${group.toImport} statements`} to import`;
 
   return (
-    <details
-      className="review-group"
-      open={!collapsed || asksDueDay || pendingCard}
+    <section
+      className={
+        outlineNew && cardRef.kind === 'new' && !pendingCard
+          ? 'review-group is-new'
+          : 'review-group'
+      }
     >
-      <summary>
-        <span className="review-group-title">{title}</span>
-        <span className="muted">
-          {cardRef.kind === 'new' && !pendingCard && title !== 'New card'
-            ? 'New card · '
-            : ''}
-          {summary}
-        </span>
-      </summary>
-
-      {/* The name is optional (blank takes the suggestion), so it's a plain
-          field; only a required answer gets the attention callout. */}
+      <div className="review-group-head">
+        <h2 className="review-group-title">{title}</h2>
+        {cardRef.kind === 'new' && !pendingCard && (
+          <span className="badge badge-attention">New card</span>
+        )}
+      </div>
+      {/* A new card is named here, in plain view: the one moment it can be
+          named before it lands on the dashboard. Optional: blank keeps the
+          suggestion. */}
       {asksName && (
-        <label className="field group-field">
-          Card name
+        <div className="field name-field">
+          <label htmlFor={nameInputId}>Name</label>
           <input
+            id={nameInputId}
             type="text"
             value={inputs.nicknames.get(key) ?? ''}
             onChange={(e) => onNickname(key, e.target.value)}
             placeholder={suggestion}
+            aria-describedby={nameHintId}
             disabled={disabled}
           />
-          <span className="field-hint">
-            Optional. Leave blank to use “{suggestion}”.
+          <span id={nameHintId} className="field-hint">
+            {hint !== null &&
+              (hint.startsWith('likely ')
+                ? `Likely ${hint.slice('likely '.length)}, from the file name. `
+                : `The statement says ${hint}. `)}
+            Leave blank to use “{suggestion}”.
           </span>
-        </label>
+        </div>
       )}
+
       {asksDueDay && (
         <div className="callout">
           <label className="field">
@@ -336,52 +374,65 @@ function CardGroup({
         </div>
       )}
 
-      <ul className="plan-list">
-        {group.outcomes.map((outcome) => {
-          const fileName = outcomeFileName(outcome);
-          const { month, year } = periodAxisLabel(outcome.period);
-          const due = outcome.parsed.summary.paymentDueDateISO;
-          return (
-            <li
-              key={fileName}
-              className={
-                importCount([outcome]) === 0 ? 'plan-row skipped' : 'plan-row'
-              }
-            >
-              <div className="plan-row-main">
-                <div className="plan-row-file">
-                  {month} {year}
+      {/* "Which card is this?" lives on a statement row, so the list opens
+          while a file waits for it. */}
+      <details
+        className="review-statements"
+        open={listOpen}
+        onToggle={(e) => setListOpen(e.currentTarget.open)}
+      >
+        <summary>{statements}</summary>
+        <ul className="plan-list">
+          {group.outcomes.map((outcome) => {
+            const fileName = outcomeFileName(outcome);
+            const { month, year } = periodAxisLabel(outcome.period);
+            const due = outcome.parsed.summary.paymentDueDateISO;
+            return (
+              <li
+                key={fileName}
+                className={
+                  importCount([outcome]) === 0 ? 'plan-row skipped' : 'plan-row'
+                }
+              >
+                <div className="plan-row-main">
+                  <div className="plan-row-file">
+                    {month} {year}
+                  </div>
+                  <div className="plan-row-details">
+                    <span>{fileName}</span>
+                    <span>
+                      {outcome.parsed.transactions.length} transactions
+                    </span>
+                    {due !== undefined && (
+                      <span>due {formatDateLabel(due)}</span>
+                    )}
+                    {outcome.kind === 'duplicate' && (
+                      <span className="badge">{duplicateLabel(outcome)}</span>
+                    )}
+                  </div>
                 </div>
-                <div className="plan-row-details">
-                  <span>{fileName}</span>
-                  <span>{outcome.parsed.transactions.length} transactions</span>
-                  {due !== undefined && <span>due {formatDateLabel(due)}</span>}
-                  {outcome.kind === 'duplicate' && (
-                    <span className="badge">{duplicateLabel(outcome)}</span>
-                  )}
-                </div>
-              </div>
-              <RemoveButton
-                fileName={fileName}
-                disabled={disabled}
-                onRemove={onRemove}
-              />
-              {questions.has(fileName) && (
-                <WhichCard
+                <RemoveButton
                   fileName={fileName}
-                  last4={outcome.parsed.last4}
-                  options={questions.get(fileName)!}
-                  choice={assignments.get(fileName)}
-                  showMissing={showMissing}
                   disabled={disabled}
-                  onAssign={onAssign}
+                  onRemove={onRemove}
                 />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </details>
+                {questions.has(fileName) && (
+                  <WhichCard
+                    fileName={fileName}
+                    last4={outcome.parsed.last4}
+                    options={questions.get(fileName)!}
+                    choice={assignments.get(fileName)}
+                    showMissing={showMissing}
+                    disabled={disabled}
+                    onAssign={onAssign}
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </details>
+    </section>
   );
 }
 
@@ -471,9 +522,9 @@ function missingText(cardsToChoose: number, dueDays: number): string {
 function duplicateLabel(
   outcome: Extract<FileOutcome, { kind: 'duplicate' }>,
 ): string {
-  if (outcome.inBatch) return 'Same month as another file — skipped';
+  if (outcome.inBatch) return 'Same month as another file, so not added';
   if (outcome.supersedes) return 'Replaces the copy already here';
-  return 'Already imported — skipped';
+  return 'Already imported';
 }
 
 function RemoveButton({

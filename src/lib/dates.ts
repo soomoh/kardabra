@@ -104,6 +104,20 @@ export function nextDueDateWithGraceISO(
   return candidate;
 }
 
+/** A cycle's due date: the date the bank printed wins; without one, project
+ * the card's `dueDay` from the statement's anchor date (its dateline, else
+ * its latest transaction); with neither, null — unknown, not a guess. The
+ * one rule for import and for a later due-day edit. */
+export function cycleDueDateISO(
+  printedISO: string | undefined,
+  anchorISO: string | null,
+  dueDay: number | undefined,
+): string | null {
+  if (printedISO !== undefined) return printedISO;
+  if (dueDay === undefined || anchorISO === null) return null;
+  return nextDueDateWithGraceISO(anchorISO, dueDay);
+}
+
 /** `bISO` minus `aISO`, in whole days (can be negative if `bISO` is
  * earlier). Uses `Date.UTC` — treating both dates as midnight UTC rather
  * than midnight in some local timezone — specifically so the subtraction
@@ -137,20 +151,11 @@ export function todayISO(): string {
 
 /**
  * Display formatters — ISO stays the internal storage/sort format (it
- * sorts lexicographically and needs no timezone reasoning), but every
- * user-facing label uses Indian conventions, never the US month-first
- * order. A billing period 'YYYY-MM' -> 'MM-YYYY'; a full date
- * 'YYYY-MM-DD' -> 'DD-MM-YYYY'. Both are pure string re-orderings of our
- * own well-formed ISO values; anything that doesn't match the shape is
- * returned unchanged rather than mangled (defensive, shouldn't occur).
+ * sorts lexicographically and needs no timezone reasoning); people read
+ * "2 Nov" and "Oct 2025": day first, never the US month-first order, and
+ * no all-number dates that could be read either way. Anything that doesn't
+ * match the shape is returned unchanged rather than mangled.
  */
-export function formatPeriodLabel(period: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(period);
-  if (match === null) return period;
-  const [, year, month] = match;
-  return `${month}-${year}`;
-}
-
 const MONTH_ABBREVIATIONS = [
   'Jan',
   'Feb',
@@ -166,6 +171,23 @@ const MONTH_ABBREVIATIONS = [
   'Dec',
 ];
 
+/** 'YYYY-MM' → 'Oct 2025'. */
+export function formatPeriodLabel(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (match === null) return period;
+  return `${MONTH_ABBREVIATIONS[Number(match[2]) - 1]} ${match[1]}`;
+}
+
+/** 'YYYY-MM-DD' → '2 Nov', with the year only when it isn't this year's
+ * ('2 Nov 2024'), so older dates stay unambiguous. */
+export function formatDateLabel(iso: string, today = todayISO()): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (match === null) return iso;
+  const [, year, month, day] = match;
+  const label = `${Number(day)} ${MONTH_ABBREVIATIONS[Number(month) - 1]}`;
+  return year === today.slice(0, 4) ? label : `${label} ${year}`;
+}
+
 /** 'YYYY-MM' → its month and year as separate short labels ('Jun',
  * '2025'), for chart axes where the year is printed only where it
  * changes. Falls back to the raw period. */
@@ -180,11 +202,41 @@ export function periodAxisLabel(period: string): {
   return { month, year: match[1] };
 }
 
-export function formatDateLabel(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (match === null) return iso;
-  const [, year, month, day] = match;
-  return `${day}-${month}-${year}`;
+/** The billing month before `period` ('2025-01' → '2024-12'). */
+export function previousPeriod(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  return month === 1
+    ? `${year - 1}-12`
+    : `${year}-${String(month - 1).padStart(2, '0')}`;
+}
+
+/** The billing month after `period` ('2024-12' → '2025-01'). */
+export function nextPeriod(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  return month === 12
+    ? `${year + 1}-01`
+    : `${year}-${String(month + 1).padStart(2, '0')}`;
+}
+
+/** The months strictly between two periods, oldest first: the statements
+ * missing from a card's history ('2025-07', '2025-10' → Aug, Sep). */
+export function periodsBetween(older: string, newer: string): string[] {
+  const shape = /^\d{4}-(0[1-9]|1[0-2])$/;
+  if (!shape.test(older) || !shape.test(newer)) return [];
+  const out: string[] = [];
+  for (let p = previousPeriod(newer); p > older; p = previousPeriod(p)) {
+    out.unshift(p);
+  }
+  return out;
+}
+
+/** English ordinal for a day of the month: 1st, 2nd, 3rd, 11th, 22nd. */
+export function ordinal(day: number): string {
+  const teen = day % 100 >= 11 && day % 100 <= 13;
+  const suffix = teen
+    ? 'th'
+    : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
+  return `${day}${suffix}`;
 }
 
 /** A due day the user can actually mean: a whole day of the month. */

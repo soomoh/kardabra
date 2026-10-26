@@ -17,11 +17,11 @@ import {
   type UnlockInput,
 } from '../import/read';
 import { readPdfInBrowser } from '../import/browserPdf';
-import type { View } from '../App';
+import type { View } from '../lib/route';
 import { useDocumentTitle } from './useDocumentTitle';
 
 interface ImportPageProps {
-  setView: (view: View) => void;
+  navigate: (view: View, options?: { replace?: boolean }) => void;
 }
 
 /**
@@ -56,7 +56,7 @@ interface Plan {
   assignments: Map<string, string>;
 }
 
-function ImportPage({ setView }: ImportPageProps) {
+function ImportPage({ navigate }: ImportPageProps) {
   const db = useDb();
   const reportError = useReportError();
   const { bump } = useDataVersion();
@@ -297,7 +297,7 @@ function ImportPage({ setView }: ImportPageProps) {
         withSuggestedNames(outcomes, inputs),
       );
       bump();
-      setView({ name: 'dashboard', notice: importedNotice(result) });
+      navigate({ name: 'dashboard', notice: importedNotice(result) });
     } catch (error) {
       // A commit is several writes, so a failure can leave some of them done
       // (a card created, a statement written). Re-plan against what is in the

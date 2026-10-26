@@ -157,72 +157,6 @@ describe('visibleMonthTotals — legend toggle arithmetic', () => {
   });
 });
 
-describe('allocateSegmentHeights — no nonzero segment may vanish', () => {
-  // Bar of 100px, min 4px, gap 2px throughout unless a case says otherwise.
-  const BAR = 100;
-  const MIN = 4;
-  const GAP = 2;
-
-  it('proportional when everything already clears the minimum', () => {
-    const heights = allocateSegmentHeights([300, 100], BAR, MIN, GAP);
-    // available = 100 - 2 = 98; proportions 3:1 -> 73.5 / 24.5
-    expect(heights[0]).toBeCloseTo(73.5, 5);
-    expect(heights[1]).toBeCloseTo(24.5, 5);
-    // Total height stays truthful: segments + one gap = the bar height.
-    expect(heights[0] + heights[1] + GAP).toBeCloseTo(BAR, 5);
-  });
-
-  it('gives a tiny nonzero value the min bar height instead of letting it vanish', () => {
-    // 1-vs-999 split: proportionally the small segment would get
-    // ~0.098px — under the old gap subtraction it rendered as nothing.
-    const heights = allocateSegmentHeights([1, 999], BAR, MIN, GAP);
-    expect(heights[0]).toBe(MIN);
-    // ...and the largest absorbed exactly the difference, so the bar's
-    // total height is still truthful to the month total.
-    expect(heights[0] + heights[1] + GAP).toBeCloseTo(BAR, 5);
-  });
-
-  it('the LARGEST segment absorbs the boost, not a middle one', () => {
-    const heights = allocateSegmentHeights([1, 500, 1000], BAR, MIN, GAP);
-    // available = 100 - 2*2 = 96. Proportional: ~0.064 / 31.98 / 63.96.
-    // Both tiny-segment boosts must come out of the 1000 segment only —
-    // the 500 segment keeps its proportional height untouched.
-    expect(heights[0]).toBe(MIN);
-    expect(heights[1]).toBeCloseTo((500 / 1501) * 96, 5);
-    const total = heights[0] + heights[1] + heights[2] + 2 * GAP;
-    expect(total).toBeCloseTo(BAR, 5);
-  });
-
-  it('zero values get exactly zero — no phantom slivers, no gap charged for them', () => {
-    const heights = allocateSegmentHeights([0, 300, 0, 100], BAR, MIN, GAP);
-    expect(heights[0]).toBe(0);
-    expect(heights[2]).toBe(0);
-    // Only ONE gap (between the two nonzero segments), so segments sum
-    // to bar height minus one gap, not three.
-    expect(heights[1] + heights[3] + GAP).toBeCloseTo(BAR, 5);
-  });
-
-  it('all-zero input: all-zero output', () => {
-    expect(allocateSegmentHeights([0, 0, 0], BAR, MIN, GAP)).toEqual([0, 0, 0]);
-  });
-
-  it('degenerate: mins exceed the bar height -> equal split of what fits, nothing vanishes', () => {
-    // 4 nonzero segments, min 4px each + 3 gaps = 22px needed, but the
-    // bar is only 10px tall. Proportionality is abandoned: every
-    // segment gets an equal (tiny) share, none disappears.
-    const heights = allocateSegmentHeights([1, 2, 3, 4], 10, MIN, GAP);
-    const each = (10 - 3 * GAP) / 4;
-    for (const height of heights) {
-      expect(height).toBeCloseTo(each, 5);
-      expect(height).toBeGreaterThan(0);
-    }
-  });
-
-  it('single segment: gets the whole bar, no gap involved', () => {
-    expect(allocateSegmentHeights([42], BAR, MIN, GAP)).toEqual([BAR]);
-  });
-});
-
 describe('monthlyTrends — unpaid months', () => {
   const cards = [
     { id: 'a', nickname: 'A', createdAt: '2025-01-01T00:00:00Z' },
@@ -253,25 +187,89 @@ describe('monthlyTrends — unpaid months', () => {
   });
 });
 
-describe('allocateSegmentHeights — per-segment minimums', () => {
-  it('a tiny hatched segment gets its larger minimum; the total stays true', () => {
-    // 1000 vs 1: proportionally the small one would be ~0.1px.
-    const heights = allocateSegmentHeights([1000, 1], 100, [4, 12], 2);
-    expect(heights[1]).toBeCloseTo(12);
-    expect(heights[0] + heights[1] + 2).toBeCloseTo(100);
+describe('allocateSegmentHeights — sizes stay honest', () => {
+  const sum = (r: { heights: number[]; gap: number }) =>
+    r.heights.reduce((a, b) => a + b, 0) +
+    r.gap * (r.heights.filter((h) => h > 0).length - 1);
+
+  it('proportional when everything already clears the minimum', () => {
+    const r = allocateSegmentHeights([300, 100], 100, 2, 2);
+    // available = 100 - 2 = 98; 3:1 -> 73.5 / 24.5
+    expect(r.heights[0]).toBeCloseTo(73.5, 5);
+    expect(r.heights[1]).toBeCloseTo(24.5, 5);
+    expect(sum(r)).toBeCloseTo(100, 5);
   });
 
-  it('repays from the segment with the most room above its own minimum', () => {
-    const heights = allocateSegmentHeights([50, 50, 1], 100, [40, 4, 12], 0);
-    // Segment 0 is pinned near its 40px minimum's neighbourhood; segment 1
-    // has more headroom and pays.
-    expect(heights[2]).toBeCloseTo(12);
-    expect(heights[0]).toBeGreaterThanOrEqual(40);
-    expect(heights[1]).toBeGreaterThanOrEqual(4);
-    expect(heights.reduce((a, b) => a + b, 0)).toBeCloseTo(100);
+  it('₹3,000 vs ₹500 in a short bar stays about 6:1, never equal', () => {
+    // The case that read as two equal blocks: a ~15px bar, the small
+    // one unpaid (min 4) — before, the minimums forced an equal split.
+    const r = allocateSegmentHeights([3000, 500], 15, [2, 4], 3);
+    expect(r.gap).toBeCloseTo(15 * 0.15, 5); // gap shrinks on a short bar
+    expect(r.heights[0] / r.heights[1]).toBeGreaterThan(2);
+    expect(r.heights[0]).toBeGreaterThan(r.heights[1]);
+    expect(sum(r)).toBeCloseTo(15, 5);
   });
 
-  it('equal split when the minimums alone do not fit', () => {
-    expect(allocateSegmentHeights([5, 5], 20, [12, 12], 0)).toEqual([10, 10]);
+  it('raises a tiny value to its minimum so it stays visible', () => {
+    const r = allocateSegmentHeights([1, 999], 100, 2, 2);
+    expect(r.heights[0]).toBe(2);
+    expect(sum(r)).toBeCloseTo(100, 5);
+  });
+
+  it('the LARGEST segment pays for the raise, not a middle one', () => {
+    const r = allocateSegmentHeights([1, 500, 1000], 100, 4, 2);
+    expect(r.heights[0]).toBe(4);
+    expect(r.heights[1]).toBeCloseTo((500 / 1501) * 96, 5);
+    expect(sum(r)).toBeCloseTo(100, 5);
+  });
+
+  it('never draws a smaller value as tall as a bigger one: falls back to proportional', () => {
+    // Raising 90 to its 60px minimum would push 100 down to 40px.
+    const r = allocateSegmentHeights([100, 90], 100, [2, 60], 0);
+    expect(r.heights[0]).toBeGreaterThan(r.heights[1]);
+    expect(r.heights[0] / r.heights[1]).toBeCloseTo(100 / 90, 5);
+  });
+
+  it('proportional, not equal, when the minimums do not fit', () => {
+    const r = allocateSegmentHeights([1, 2, 3, 4], 10, 4, 2);
+    expect(r.heights[3] / r.heights[0]).toBeCloseTo(4, 5);
+    expect(sum(r)).toBeCloseTo(10, 5);
+  });
+
+  it('zeros get exactly zero and no gap', () => {
+    const r = allocateSegmentHeights([0, 300, 0, 100], 100, 2, 2);
+    expect(r.heights[0]).toBe(0);
+    expect(r.heights[2]).toBe(0);
+    expect(r.heights[1] + r.heights[3] + r.gap).toBeCloseTo(100, 5);
+  });
+
+  it('all-zero input: all-zero output', () => {
+    expect(allocateSegmentHeights([0, 0, 0], 100, 2, 2).heights).toEqual([
+      0, 0, 0,
+    ]);
+  });
+
+  it('single segment: the whole bar', () => {
+    expect(allocateSegmentHeights([42], 100, 2, 2).heights).toEqual([100]);
+  });
+});
+
+describe('monthlyTrends — missing statements', () => {
+  it('marks a month between a card’s first and last statement as missing, not zero', () => {
+    const trends = monthlyTrends(
+      [{ id: 'a', nickname: 'A', createdAt: '2025-01-01T00:00:00Z' }],
+      [
+        { cardId: 'a', period: '2025-07', spend: 3000 },
+        { cardId: 'a', period: '2025-09', spend: 500 },
+      ],
+    );
+    const a = trends.series[0];
+    const at = (period: string) => trends.periods.indexOf(period);
+    expect(a.missing[at('2025-08')]).toBe(true);
+    expect(a.values[at('2025-08')]).toBe(0);
+    // Before the first statement there was nothing to miss.
+    expect(a.missing[at('2025-06')]).toBe(false);
+    expect(a.missing[at('2025-07')]).toBe(false);
+    expect(a.missing[at('2025-09')]).toBe(false);
   });
 });

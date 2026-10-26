@@ -50,7 +50,7 @@
 }
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Type */
   --font-body: 'Figtree', system-ui, sans-serif;
@@ -82,6 +82,7 @@
   /* Size floors */
   --control-height: 2.5rem;
   --control-height-lg: 2.75rem;
+  --control-height-sm: 2rem; /* segmented options (theme toggle) */
 
   /* Motion: quiet — state changes only. */
   --dur: 180ms;
@@ -100,6 +101,7 @@
   --hero-bg: #23523a;
   --hero-ink: #e6ecd9;
   --hero-num: #f3b544;
+  --hero-line: #5e806a; /* hairline in the band: hero-ink at ~30% */
   --attention: #b0681a;
   --attention-ink: #865008;
   --attention-bg: #f5d58a;
@@ -129,38 +131,41 @@
   --series-other: #9a8a68;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Colour — dark: bottle green and apricot */
-    --paper: #132a20;
-    --surface: #1b3629;
-    --ink: #e8f0e4;
-    --ink-muted: #a3b8aa;
-    --line: #2a4a3a;
-    --line-strong: #6b8f7a;
-    --primary: #9ed8b2;
-    --primary-hover: #b6e4c5;
-    --on-primary: #0f2219;
-    --hero-bg: #1f4231;
-    --hero-ink: #e8f0e4;
-    --hero-num: #f2b58c;
-    --attention: #f2b58c;
-    --attention-ink: #f2b58c;
-    --attention-bg: #3a2e22;
-    --danger: #f0a08f;
-    --focus: #9ed8b2;
-    --tooltip-shadow: 0 6px 18px oklch(10% 0.03 160 / 0.5);
+/* index.html's inline script always sets data-theme before first paint:
+ * the saved choice, or the system preference for "System". One dark block,
+ * so a toggle and the OS setting can't disagree. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  /* Colour — dark: bottle green and apricot */
+  --paper: #132a20;
+  --surface: #1b3629;
+  --ink: #e8f0e4;
+  --ink-muted: #a3b8aa;
+  --line: #2a4a3a;
+  --line-strong: #6b8f7a;
+  --primary: #9ed8b2;
+  --primary-hover: #b6e4c5;
+  --on-primary: #0f2219;
+  --hero-bg: #265640; /* lifted clear of --surface (1.55:1) */
+  --hero-ink: #e8f0e4;
+  --hero-num: #f2b58c;
+  --hero-line: #608471;
+  --attention: #f2b58c;
+  --attention-ink: #f2b58c;
+  --attention-bg: #3a2e22;
+  --danger: #f0a08f;
+  --focus: #9ed8b2;
+  --tooltip-shadow: 0 6px 18px oklch(10% 0.03 160 / 0.5);
 
-    /* Validated against --surface: CVD WARN 7.2 on 1↔2 (floor band, legal
+  /* Validated against --surface: CVD WARN 7.2 on 1↔2 (floor band, legal
      * with the gaps, legend and table view). */
-    --series-1: #43aa7a;
-    --series-2: #cc7e46;
-    --series-3: #25a6a6;
-    --series-4: #a5952f;
-    --series-5: #c66295;
-    --series-6: #779a45;
-    --series-7: #3590bf;
-    --series-8: #c86556;
-    --series-other: #7f9688;
-  }
+  --series-1: #43aa7a;
+  --series-2: #cc7e46;
+  --series-3: #25a6a6;
+  --series-4: #a5952f;
+  --series-5: #c66295;
+  --series-6: #779a45;
+  --series-7: #3590bf;
+  --series-8: #c86556;
+  --series-other: #7f9688;
 }

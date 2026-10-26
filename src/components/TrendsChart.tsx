@@ -1,9 +1,12 @@
-import { useCallback, useId, useRef, useState } from 'react';
-import type {
-  CSSProperties,
-  PointerEvent as ReactPointerEvent,
-  FocusEvent,
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
 } from 'react';
+import type { CSSProperties } from 'react';
 import type { MonthlyTrends, TrendSeries } from '../lib/trends';
 import { visibleMonthTotals, allocateSegmentHeights } from '../lib/trends';
 import { formatINR, formatINRCompact } from '../lib/money';
@@ -43,13 +46,14 @@ const SEGMENT_GAP = 3; // px, in --chart-surface — the spacer between stacked 
 const SEGMENT_RADIUS = 7; // px, every segment is a capsule (capped at half its size)
 const BAR_WIDTH_RATIO = 0.6; // bar width as a fraction of its month slot
 const HATCH_STROKE = 2; // px outline around a hatched (unpaid) segment
-// No nonzero segment may render shorter than this — a real small spend
-// must stay visible instead of vanishing under gap subtraction. The
-// reallocation arithmetic lives in lib/trends.ts's allocateSegmentHeights.
-const MIN_SEGMENT_PX = 4;
-// A hatched (unpaid) segment needs room for its outline and at least one
-// visible stripe; any thinner and it reads as solid, i.e. as paid.
-const MIN_HATCHED_PX = 12;
+// Below this a 2px outline would fill the box and read as solid (paid):
+// a 1px outline keeps a short unpaid segment hollow.
+const THIN_HATCH_BELOW_PX = 10;
+// Visibility floors, small so they don't distort sizes: a ₹500 spend must
+// not look like a ₹3,000 one. lib/trends.ts's allocateSegmentHeights
+// applies them only when the size order survives.
+const MIN_SEGMENT_PX = 2;
+const MIN_HATCHED_PX = 4;
 
 /** The smallest "nice" (1/2/5 * 10^n) ceiling for `max`, used as the top
  * gridline so the four gridlines land on round numbers instead of
@@ -65,14 +69,15 @@ function niceCeiling(max: number): number {
   return niceResidual * magnitude;
 }
 
+/** The month whose breakdown is showing, where to anchor it (px, in the
+ * section's box), and what opened it: `hover` follows the mouse away,
+ * `focus` lasts while the month has keyboard focus, `pin` (a tap, click or
+ * Enter) stays until dismissed. */
 interface Tooltip {
+  periodIndex: number;
   x: number;
   y: number;
-  nickname: string;
-  period: string;
-  value: number;
-  unpaid: boolean;
-  monthTotal: number;
+  mode: 'hover' | 'focus' | 'pin';
 }
 
 function TrendsChart({ trends }: TrendsChartProps) {
@@ -82,6 +87,41 @@ function TrendsChart({ trends }: TrendsChartProps) {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
   const containerRef = useRef<HTMLElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  // Centre the breakdown over its month, but keep the whole box inside the
+  // panel: measured after render, since its width depends on the names.
+  useLayoutEffect(() => {
+    const box = tooltipRef.current;
+    const panel = containerRef.current;
+    if (box === null || panel === null || tooltip === null) return;
+    const edge = 8;
+    const left = Math.min(
+      Math.max(edge, tooltip.x - box.offsetWidth / 2),
+      panel.clientWidth - box.offsetWidth - edge,
+    );
+    box.style.left = `${Math.max(edge, left)}px`;
+    // It opens upward from its anchor; never past the panel's top.
+    box.style.top = `${Math.max(tooltip.y, box.offsetHeight + edge)}px`;
+  }, [tooltip]);
+  // While open: Escape closes it wherever focus is, and a tap or click
+  // outside the month columns closes a pinned one (a tap doesn't always
+  // move focus, so blur alone can't be relied on).
+  useEffect(() => {
+    if (tooltip === null) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setTooltip(null);
+    }
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Element | null;
+      if (!target?.closest?.('.trends-hit')) setTooltip(null);
+    }
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [tooltip]);
   const patternPrefix = useId();
   const [svgWidth, setChartWidth] = useState(MIN_CHART_WIDTH);
   // Callback ref (re-attached when the table view swaps the chart out);
@@ -100,6 +140,7 @@ function TrendsChart({ trends }: TrendsChartProps) {
   if (trends.periods.length === 0) return null;
 
   function toggleCard(cardId: string) {
+    setTooltip(null); // its totals and position change with the stack
     setExcludedCardIds((current) => {
       const next = new Set(current);
       if (next.has(cardId)) {
@@ -131,26 +172,48 @@ function TrendsChart({ trends }: TrendsChartProps) {
     return (value / chartMax) * chartHeight;
   }
 
-  function showTooltip(
-    event: ReactPointerEvent | FocusEvent,
-    nickname: string,
-    period: string,
-    value: number,
-    unpaid: boolean,
+  /** Show a month's breakdown, anchored over its bar. A whole month column
+   * is the target — however thin its segments, it's easy to hit with a
+   * finger, and one tab stop per month instead of per segment. */
+  function showMonth(
+    target: SVGElement,
     periodIndex: number,
+    mode: Tooltip['mode'],
   ) {
     const containerRect = containerRef.current?.getBoundingClientRect();
-    const targetRect = event.currentTarget.getBoundingClientRect();
-    if (containerRect === undefined) return;
+    const svgRect = target.ownerSVGElement?.getBoundingClientRect();
+    if (containerRect === undefined || svgRect === undefined) return;
     setTooltip({
-      x: targetRect.left + targetRect.width / 2 - containerRect.left,
-      y: targetRect.top - containerRect.top,
-      nickname,
-      period,
-      value,
-      unpaid,
-      monthTotal: monthTotals[periodIndex],
+      periodIndex,
+      x:
+        svgRect.left -
+        containerRect.left +
+        MARGIN_LEFT +
+        slotWidth * (periodIndex + 0.5),
+      y:
+        svgRect.top -
+        containerRect.top +
+        chartBottom -
+        yForValue(monthTotals[periodIndex]) -
+        24,
+      mode,
     });
+  }
+
+  /** A month's cards with spend, biggest first, as the tooltip lists them. */
+  function monthBreakdown(periodIndex: number) {
+    return visibleSeries
+      .map((series) => ({
+        series,
+        value: series.values[periodIndex],
+        unpaid: series.unpaid[periodIndex],
+        // No statement that month: unknown, listed last, never as ₹0.
+        missing: series.missing[periodIndex],
+      }))
+      .filter((entry) => entry.value > 0 || entry.missing)
+      .sort(
+        (a, b) => Number(a.missing) - Number(b.missing) || b.value - a.value,
+      );
   }
 
   const gridlines = Array.from({ length: GRIDLINE_COUNT + 1 }, (_, i) => {
@@ -203,7 +266,9 @@ function TrendsChart({ trends }: TrendsChartProps) {
               width={svgWidth}
               height={CHART_HEIGHT}
               viewBox={`0 0 ${svgWidth} ${CHART_HEIGHT}`}
-              role="img"
+              // A group, not an image: its segments are focusable and
+              // labelled, which an img role would hide.
+              role="group"
               aria-label="Monthly spend by card, last 6 months"
             >
               <defs>
@@ -253,16 +318,13 @@ function TrendsChart({ trends }: TrendsChartProps) {
                 const slotX = MARGIN_LEFT + slotWidth * periodIndex;
                 const barX = slotX + (slotWidth - barWidth) / 2;
 
-                // Segment heights come from the tested reallocation
-                // helper (lib/trends.ts): every nonzero value gets at
-                // least MIN_SEGMENT_PX, the extra pixels come out of the
-                // largest segment(s), and the bar's total height stays
-                // truthful to the month total — a small-but-real value
-                // never gets swallowed by gap subtraction.
+                // Segment heights come from the tested helper in
+                // lib/trends.ts: proportional, with small visibility floors
+                // that never reorder sizes; the bar's total stays true.
                 const periodValues = visibleSeries.map(
                   (series) => series.values[periodIndex],
                 );
-                const segmentHeights = allocateSegmentHeights(
+                const { heights: segmentHeights, gap } = allocateSegmentHeights(
                   periodValues,
                   yForValue(monthTotals[periodIndex]),
                   visibleSeries.map((series) =>
@@ -291,9 +353,9 @@ function TrendsChart({ trends }: TrendsChartProps) {
 
                 let stackCursor = chartBottom; // y of the next segment's bottom edge
                 const segments = stacked.map((entry) => {
-                  const { series, value, unpaid, height } = entry;
+                  const { series, unpaid, height } = entry;
                   const top = stackCursor - height;
-                  stackCursor = top - SEGMENT_GAP;
+                  stackCursor = top - gap;
 
                   const color = colorVarFor(
                     trends.series.indexOf(series),
@@ -301,23 +363,14 @@ function TrendsChart({ trends }: TrendsChartProps) {
                   );
                   // A hatched segment's outline is drawn inside its box, so
                   // paid and unpaid segments of the same value match in size.
-                  const inset = unpaid ? HATCH_STROKE / 2 : 0;
+                  const stroke =
+                    height < THIN_HATCH_BELOW_PX ? 1 : HATCH_STROKE;
+                  const inset = unpaid ? stroke / 2 : 0;
                   const radius = Math.min(
                     SEGMENT_RADIUS,
                     height / 2,
                     barWidth / 2,
                   );
-                  const label = `${series.nickname}, ${formatPeriodLabel(period)}: ${formatINR(value)}${unpaid ? ', not paid yet' : ''}`;
-                  const show = (e: ReactPointerEvent | FocusEvent) =>
-                    showTooltip(
-                      e,
-                      series.nickname,
-                      period,
-                      value,
-                      unpaid,
-                      periodIndex,
-                    );
-
                   return (
                     <rect
                       key={series.cardId ?? 'other'}
@@ -325,19 +378,13 @@ function TrendsChart({ trends }: TrendsChartProps) {
                       x={barX + inset}
                       y={top + inset}
                       width={barWidth - inset * 2}
-                      height={Math.max(0, height - inset * 2)}
+                      // At least 1px drawn, so every spend leaves a mark.
+                      height={Math.max(1, height - inset * 2)}
                       rx={Math.max(0, radius - inset)}
                       fill={unpaid ? `url(#${hatchId(series)})` : color}
                       stroke={unpaid ? color : undefined}
-                      strokeWidth={unpaid ? HATCH_STROKE : undefined}
-                      tabIndex={0}
-                      role="img"
-                      aria-label={label}
-                      onPointerEnter={show}
-                      onPointerMove={show}
-                      onPointerLeave={() => setTooltip(null)}
-                      onFocus={show}
-                      onBlur={() => setTooltip(null)}
+                      strokeWidth={unpaid ? stroke : undefined}
+                      aria-hidden="true"
                     />
                   );
                 });
@@ -345,8 +392,28 @@ function TrendsChart({ trends }: TrendsChartProps) {
                 const monthTotal = monthTotals[periodIndex];
                 const axis = periodAxisLabel(period);
 
+                const breakdown = monthBreakdown(periodIndex);
+                const active = tooltip?.periodIndex === periodIndex;
+                const monthLabel = `${formatPeriodLabel(period)}: ${formatINR(monthTotal)}${breakdown
+                  .map(
+                    (e) =>
+                      `; ${e.series.nickname} ${e.missing ? 'no statement' : formatINR(e.value)}${e.unpaid ? ', not paid yet' : ''}`,
+                  )
+                  .join('')}`;
+
                 return (
                   <g key={period}>
+                    {active && (
+                      <rect
+                        className="trends-band"
+                        x={slotX}
+                        y={MARGIN_TOP}
+                        width={slotWidth}
+                        height={chartHeight}
+                        rx={SEGMENT_RADIUS}
+                        aria-hidden="true"
+                      />
+                    )}
                     {segments}
                     <text
                       x={slotX + slotWidth / 2}
@@ -374,28 +441,108 @@ function TrendsChart({ trends }: TrendsChartProps) {
                         </tspan>
                       )}
                     </text>
+                    {/* The month's hit target: its whole column, labels
+                        included. Hover follows the mouse; a tap or click
+                        pins it; Escape closes it. */}
+                    {monthTotal > 0 && (
+                      <rect
+                        className="trends-hit"
+                        x={slotX}
+                        y={MARGIN_TOP}
+                        width={slotWidth}
+                        height={CHART_HEIGHT - MARGIN_TOP}
+                        fill="transparent"
+                        tabIndex={0}
+                        role="img"
+                        aria-label={monthLabel}
+                        onPointerEnter={(e) => {
+                          // The mouse never takes over a pinned or
+                          // keyboard-opened breakdown.
+                          if (
+                            e.pointerType === 'mouse' &&
+                            (tooltip === null || tooltip.mode === 'hover')
+                          )
+                            showMonth(e.currentTarget, periodIndex, 'hover');
+                        }}
+                        onPointerLeave={(e) => {
+                          if (
+                            e.pointerType === 'mouse' &&
+                            tooltip?.mode === 'hover'
+                          )
+                            setTooltip(null);
+                        }}
+                        onClick={(e) =>
+                          active && tooltip?.mode === 'pin'
+                            ? setTooltip(null)
+                            : showMonth(e.currentTarget, periodIndex, 'pin')
+                        }
+                        onFocus={(e) =>
+                          showMonth(e.currentTarget, periodIndex, 'focus')
+                        }
+                        onBlur={() => setTooltip(null)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            if (active && tooltip?.mode === 'pin')
+                              setTooltip(null);
+                            else showMonth(e.currentTarget, periodIndex, 'pin');
+                          }
+                        }}
+                      />
+                    )}
                   </g>
                 );
               })}
             </svg>
           </div>
 
-          {tooltip !== null && (
+          {tooltip !== null && tooltip.periodIndex < trends.periods.length && (
             <div
               className="trends-tooltip"
-              style={{
-                left: tooltip.x,
-                top: tooltip.y,
-                transform: 'translate(-50%, -100%)',
-              }}
+              ref={tooltipRef}
+              style={{ left: tooltip.x, top: tooltip.y }}
             >
-              <div>
-                {tooltip.nickname}, {formatPeriodLabel(tooltip.period)}:{' '}
-                <strong>{formatINR(tooltip.value)}</strong>
+              <div className="trends-tooltip-title">
+                {formatPeriodLabel(trends.periods[tooltip.periodIndex])}
               </div>
-              {tooltip.unpaid && <div>Not paid yet</div>}
-              <div className="muted">
-                Month total {formatINR(tooltip.monthTotal)}
+              <ul>
+                {monthBreakdown(tooltip.periodIndex).map((entry) => (
+                  <li key={entry.series.cardId ?? 'other'}>
+                    <span
+                      className={
+                        entry.unpaid ? 'legend-swatch hatch' : 'legend-swatch'
+                      }
+                      style={
+                        {
+                          '--swatch': colorVarFor(
+                            trends.series.indexOf(entry.series),
+                            entry.series,
+                          ),
+                        } as CSSProperties
+                      }
+                      aria-hidden="true"
+                    />
+                    <span>
+                      {entry.series.nickname}
+                      {entry.unpaid && (
+                        <span className="muted">, not paid yet</span>
+                      )}
+                    </span>
+                    {entry.missing ? (
+                      <span className="muted amount">No statement</span>
+                    ) : (
+                      <strong className="amount">
+                        {formatINR(entry.value)}
+                      </strong>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <div className="trends-tooltip-total">
+                <span>Total</span>
+                <strong className="amount">
+                  {formatINR(monthTotals[tooltip.periodIndex])}
+                </strong>
               </div>
             </div>
           )}
@@ -432,13 +579,8 @@ function LegendChip({ series, colorVar, dimmed, onToggle }: LegendChipProps) {
         className="legend-chip"
         onClick={onToggle}
         disabled={onToggle === undefined}
-        // Pressed = hidden from the chart.
-        aria-pressed={onToggle === undefined ? undefined : dimmed}
-        aria-label={
-          onToggle === undefined
-            ? undefined
-            : `${dimmed ? 'Show' : 'Hide'} ${series.nickname}`
-        }
+        // Pressed = shown on the chart; the name stays the card's.
+        aria-pressed={onToggle === undefined ? undefined : !dimmed}
       >
         <span
           className="legend-swatch"
@@ -460,7 +602,7 @@ function LegendChip({ series, colorVar, dimmed, onToggle }: LegendChipProps) {
 function TrendsTable({ trends }: { trends: MonthlyTrends }) {
   return (
     <div className="table-scroll">
-      <table className="txn-table">
+      <table className="txn-table" aria-label="Monthly spend by card">
         <thead>
           <tr>
             <th>Month</th>
@@ -478,7 +620,11 @@ function TrendsTable({ trends }: { trends: MonthlyTrends }) {
               <td className="nowrap">{formatPeriodLabel(period)}</td>
               {trends.series.map((series) => (
                 <td key={series.cardId ?? 'other'} className="num">
-                  {formatINR(series.values[periodIndex])}
+                  {series.missing[periodIndex] ? (
+                    <span className="muted">No statement</span>
+                  ) : (
+                    formatINR(series.values[periodIndex])
+                  )}
                 </td>
               ))}
               <td className="num">

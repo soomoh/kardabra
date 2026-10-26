@@ -8,7 +8,7 @@ import type {
 } from '../db/schema';
 import { formatSignedINR } from '../lib/money';
 import { identifyPaymentIndices, type PaymentMark } from '../lib/spend';
-import { formatDateLabel } from '../lib/dates';
+import { formatDateLabel, formatPeriodLabel } from '../lib/dates';
 
 /** "Which rows are checked" exists only while selecting. `checked` holds
  * positions in this statement's sorted transaction list. */
@@ -26,7 +26,7 @@ interface StatementTransactionsProps {
 
 /**
  * One statement's transactions, with the identified bill payment labelled
- * and the "Fix bill payment" flow. The parent keys this by statement, so
+ * and the "Choose bill payment" flow. The parent keys this by statement, so
  * switching statements always drops a half-made selection rather than
  * applying it to the wrong one.
  */
@@ -84,7 +84,7 @@ function StatementTransactions({
         skippedRows={statement.skippedRows ?? 0}
       />
       <div className="txn-header">
-        <h2>Transactions</h2>
+        <h2>{formatPeriodLabel(statement.period)} transactions</h2>
         {/* One button for the statement, not per row: a payment can be
             several rows (a split payment). */}
         {fixMode.mode === 'view' ? (
@@ -97,7 +97,7 @@ function StatementTransactions({
                 })
               }
             >
-              Fix bill payment
+              Choose bill payment
             </button>
             {cycle?.paymentOverride !== undefined && (
               <button onClick={() => void resetOverride().catch(reportError)}>
@@ -118,10 +118,14 @@ function StatementTransactions({
         )}
       </div>
       <div className="table-scroll">
-        <table className="txn-table">
+        <table className="txn-table" aria-label="Transactions">
           <thead>
             <tr>
-              {selecting && <th></th>}
+              {selecting && (
+                <th>
+                  <span className="visually-hidden">Bill payment</span>
+                </th>
+              )}
               <th>Date</th>
               <th>Payee</th>
               <th className="num">Amount</th>
@@ -134,19 +138,24 @@ function StatementTransactions({
               <tr key={`${txn.dateISO}-${txn.payee}-${txn.amount}-${index}`}>
                 {fixMode.mode === 'selecting' && (
                   <td>
-                    <input
-                      type="checkbox"
-                      checked={fixMode.checked.has(index)}
-                      onChange={() => toggleChecked(index)}
-                      aria-label={`Mark ${txn.payee} as bill payment`}
-                    />
+                    <label className="check-hit">
+                      <input
+                        type="checkbox"
+                        checked={fixMode.checked.has(index)}
+                        onChange={() => toggleChecked(index)}
+                        aria-label={`Mark ${txn.payee} as bill payment`}
+                      />
+                    </label>
                   </td>
                 )}
                 <td className="nowrap">{formatDateLabel(txn.dateISO)}</td>
                 <td>
                   {txn.payee}
                   {!selecting && paymentIndices.includes(index) && (
-                    <span className="credit-label"> · bill payment</span>
+                    <>
+                      {' '}
+                      <span className="badge">Bill payment</span>
+                    </>
                   )}
                 </td>
                 <td

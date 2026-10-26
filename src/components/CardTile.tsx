@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CardRecord, CycleRecord } from '../db/schema';
 import { formatINR } from '../lib/money';
 import { dueStatus } from '../lib/dueStatus';
 import { cycleNeedsPayment } from '../lib/cycles';
 import { todayISO } from '../lib/dates';
+import { routeHash } from '../lib/route';
 import { PencilIcon, TrashIcon } from './icons';
 
 interface CardTileProps {
@@ -11,7 +12,9 @@ interface CardTileProps {
   cycle: CycleRecord | null;
   /** Statements whose rows don't add up or had rows skipped. */
   statementsToCheck: number;
-  onOpen: () => void;
+  /** This tile's "Mark paid" is the dashboard's one primary action (the
+   * most urgent unpaid card). */
+  primary: boolean;
   onTogglePaid: () => void;
   onRename: (nickname: string) => void;
   onDelete: () => void;
@@ -42,43 +45,68 @@ function CardTile({
   card,
   cycle,
   statementsToCheck,
-  onOpen,
+  primary,
   onTogglePaid,
   onRename,
   onDelete,
 }: CardTileProps) {
   const [mode, setMode] = useState<TileMode>({ kind: 'normal' });
   const status = cycle === null ? null : dueStatus(todayISO(), cycle);
+  const renameButton = useRef<HTMLButtonElement>(null);
+  const deleteButton = useRef<HTMLButtonElement>(null);
+  // Leaving a mode unmounts the focused control: hand focus back to the
+  // button that opened it. Which one, not the element: the delete button
+  // isn't mounted while its confirmation shows.
+  const returnFocusTo = useRef<'rename' | 'delete' | null>(null);
+  // Escape cancels; the blur that can follow must not save the draft.
+  const cancelled = useRef(false);
+  useEffect(() => {
+    if (mode.kind !== 'normal' || returnFocusTo.current === null) return;
+    const target =
+      returnFocusTo.current === 'rename' ? renameButton : deleteButton;
+    target.current?.focus();
+    returnFocusTo.current = null;
+  }, [mode.kind]);
 
-  function saveRename() {
-    if (mode.kind !== 'renaming') return;
+  function leave(to: 'rename' | 'delete' | null) {
+    returnFocusTo.current = to;
+    setMode({ kind: 'normal' });
+  }
+
+  /** `from`: the opener to refocus — null when the save came from focus
+   * moving elsewhere, which must stay where the user put it. */
+  function saveRename(from: 'rename' | null) {
+    if (mode.kind !== 'renaming' || cancelled.current) return;
     const trimmed = mode.draft.trim();
     if (trimmed === '') return; // a card must keep some name
     onRename(trimmed);
-    setMode({ kind: 'normal' });
+    leave(from);
   }
 
   if (mode.kind === 'confirming-delete') {
     return (
       <div className="card-tile">
         <div className="card-tile-header">
-          <span className="card-nickname">Delete {card.nickname}?</span>
+          <h2 className="card-nickname">Delete {card.nickname}?</h2>
         </div>
         <p className="card-min-due">
-          Removes its statements and transactions from this device. Re-importing
-          the files brings everything back.
+          Removes its statements and transactions from this device. Importing
+          the files again brings everything back.
         </p>
         <div className="import-actions card-action">
           <button className="danger" onClick={() => onDelete()}>
             Delete
           </button>
-          <button onClick={() => setMode({ kind: 'normal' })}>Cancel</button>
+          {/* Focus lands on the safe choice. */}
+          <button autoFocus onClick={() => leave('delete')}>
+            Cancel
+          </button>
         </div>
       </div>
     );
   }
 
-  // Not a clickable <div>: the card's name is a real button, stretched over
+  // Not a clickable <div>: the card's name is a real link, stretched over
   // the tile in CSS (.card-open::after) so a click anywhere opens it. The
   // other buttons sit above that layer, siblings rather than nested.
   return (
@@ -92,30 +120,42 @@ function CardTile({
               setMode({ kind: 'renaming', draft: e.target.value })
             }
             onKeyDown={(e) => {
-              if (e.key === 'Enter') saveRename();
-              if (e.key === 'Escape') setMode({ kind: 'normal' });
+              if (e.key === 'Enter') e.preventDefault(); // see useReturnFocus
+              if (e.key === 'Enter') saveRename('rename');
+              if (e.key === 'Escape') {
+                cancelled.current = true;
+                leave('rename');
+              }
             }}
-            onBlur={saveRename}
+            onBlur={() => saveRename(null)}
             aria-label={`Nickname for ${card.nickname}`}
             autoFocus
           />
         ) : (
           <h2 className="card-nickname">
-            <button type="button" className="card-open" onClick={onOpen}>
+            <a
+              className="card-open"
+              href={routeHash({ name: 'card', cardId: card.id })}
+            >
               {card.nickname}
-            </button>
+            </a>
           </h2>
         )}
         <span className="tile-actions">
           <button
             className="icon-button"
             aria-label={`Rename ${card.nickname}`}
-            onClick={() => setMode({ kind: 'renaming', draft: card.nickname })}
+            ref={renameButton}
+            onClick={() => {
+              cancelled.current = false;
+              setMode({ kind: 'renaming', draft: card.nickname });
+            }}
           >
             <PencilIcon />
           </button>
           <button
             className="icon-button"
+            ref={deleteButton}
             aria-label={`Delete ${card.nickname}`}
             onClick={() => setMode({ kind: 'confirming-delete' })}
           >
@@ -124,21 +164,25 @@ function CardTile({
         </span>
       </div>
 
-      <p className="card-amount amount">
-        {/* An absent totalDue is not ₹0 — it's a fact the parser never
-            recovered from this card's statements, and must read as
-            "unknown" rather than silently rendering as free money. But
-            when the cycle's spend is known (it almost always is — it's
-            computed from the transactions themselves), show that instead
-            of a bare "Amount unknown": spend is a real fact about the
-            cycle, clearly labeled as spend rather than passed off as the
-            bill amount. */}
-        {cycle?.totalDue !== undefined
-          ? formatINR(cycle.totalDue)
-          : cycle?.spend !== undefined
-            ? `Spend ${formatINR(cycle.spend)}`
-            : 'Amount unknown'}
-      </p>
+      {/* What the figure is: the bill (to pay, or paid), or — when the
+          statement printed no total — what was spent, which is a fact
+          about the cycle, never passed off as the bill. An absent total
+          is not ₹0. */}
+      {cycle?.totalDue !== undefined ? (
+        <>
+          <p className="card-amount-label">
+            {cycleNeedsPayment(cycle) ? 'To pay' : 'Bill'}
+          </p>
+          <p className="card-amount amount">{formatINR(cycle.totalDue)}</p>
+        </>
+      ) : cycle?.spend !== undefined ? (
+        <>
+          <p className="card-amount-label">Spent this cycle</p>
+          <p className="card-amount amount">{formatINR(cycle.spend)}</p>
+        </>
+      ) : (
+        <p className="card-amount">Amount unknown</p>
+      )}
 
       {status !== null && (
         <p className="due-status">
@@ -170,7 +214,19 @@ function CardTile({
           spot on every tile regardless of how much content is above. */}
       {cycle !== null &&
         (cycleNeedsPayment(cycle) || cycle.paidAt !== undefined) && (
-          <button className="card-action" onClick={onTogglePaid}>
+          <button
+            // Undo is a quiet link; the most urgent "Mark paid" is primary.
+            className={
+              cycle.paidAt !== undefined
+                ? 'card-action link-button'
+                : primary
+                  ? 'card-action primary'
+                  : 'card-action'
+            }
+            onClick={onTogglePaid}
+            // The visible words first, then which card (several tiles).
+            aria-label={`${cycle.paidAt === undefined ? 'Mark paid' : 'Undo paid'}, ${card.nickname}`}
+          >
             {cycle.paidAt === undefined ? 'Mark paid' : 'Undo'}
           </button>
         )}

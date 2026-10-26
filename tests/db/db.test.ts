@@ -18,6 +18,7 @@ import {
   getAllCycles,
   recomputeCardSpends,
   setPaymentOverride,
+  setCardDueDay,
   deleteCardCascade,
   getTransactionsForStatement,
   getTransactionsForCard,
@@ -604,6 +605,45 @@ describe('recomputeCardSpends / setPaymentOverride — override round-trip', () 
     db.close();
   });
 
+  it("across a missing month, doesn't match the payment against an older bill", async () => {
+    // July's bill was ₹900; August was never imported. September has a ₹900
+    // refund and the ₹5,000 that paid August's bill, neither worded as a
+    // payment. Matching against July would take the refund as the payment.
+    const db = await openKardabraDb();
+    const c = card();
+    await putCard(db, c);
+    const july = statement({ cardId: c.id, period: '2025-07', totalDue: 900 });
+    const sept = statement({ cardId: c.id, period: '2025-09' });
+    await putStatementWithTransactions(db, july, []);
+    const row = (id: string, payee: string, amount: number) => ({
+      id,
+      statementId: sept.id,
+      cardId: c.id,
+      dateISO: '2025-09-10',
+      payee,
+      amount,
+    });
+    await putStatementWithTransactions(db, sept, [
+      row('s1', 'GROCERIES', -3000),
+      row('s2', 'SHOP REVERSAL', 900),
+      row('s3', 'NEFT 0042', 5000),
+    ]);
+    for (const period of ['2025-07', '2025-09']) {
+      await upsertCycle(db, {
+        cardId: c.id,
+        period,
+        dueDateISO: null,
+        source: 'statement',
+      });
+    }
+
+    await recomputeCardSpends(db, c.id);
+
+    // ₹5,000 is the payment; the ₹900 refund nets against the ₹3,000.
+    expect((await db.get('cycles', [c.id, '2025-09']))?.spend).toBe(2100);
+    db.close();
+  });
+
   it('setPaymentOverride marks a different row as the payment and recomputes spend', async () => {
     const db = await openKardabraDb();
     const cardId = await seedOneStatementCard(db);
@@ -659,6 +699,132 @@ describe('recomputeCardSpends / setPaymentOverride — override round-trip', () 
       setPaymentOverride(db, 'no-such-card', '2025-10', []),
     ).resolves.toBeUndefined();
     expect(await db.get('cycles', ['no-such-card', '2025-10'])).toBeUndefined();
+    db.close();
+  });
+});
+
+describe('setCardDueDay', () => {
+  it('saves the day and re-projects only due dates the statement did not print', async () => {
+    const db = await openKardabraDb();
+    const c = card({ dueDay: 5 });
+    await putCard(db, c);
+    const printed = statement({
+      cardId: c.id,
+      period: '2025-08',
+      statementDateISO: '2025-08-20',
+      dueDateISO: '2025-09-09',
+    });
+    const dated = statement({
+      cardId: c.id,
+      period: '2025-09',
+      statementDateISO: '2025-09-20',
+    });
+    // No statement date: projected from its latest transaction.
+    const undated = statement({ cardId: c.id, period: '2025-10' });
+    for (const s of [printed, dated]) {
+      await putStatementWithTransactions(db, s, []);
+    }
+    await putStatementWithTransactions(db, undated, [
+      {
+        id: 't1',
+        statementId: undated.id,
+        cardId: c.id,
+        dateISO: '2025-10-19',
+        payee: 'A',
+        amount: -10,
+      },
+      {
+        id: 't2',
+        statementId: undated.id,
+        cardId: c.id,
+        dateISO: '2025-10-03',
+        payee: 'B',
+        amount: -20,
+      },
+    ]);
+    for (const [period, dueDateISO] of [
+      ['2025-08', '2025-09-09'],
+      ['2025-09', '2025-10-05'],
+      ['2025-10', '2025-11-05'],
+    ]) {
+      await upsertCycle(db, {
+        cardId: c.id,
+        period,
+        dueDateISO,
+        source: 'statement',
+        paidAt: '2025-01-01',
+      });
+    }
+    // Another card's cycle must not move.
+    await upsertCycle(db, {
+      cardId: 'other',
+      period: '2025-09',
+      dueDateISO: '2025-10-05',
+      source: 'statement',
+    });
+
+    await setCardDueDay(db, c.id, 25);
+
+    expect((await getCard(db, c.id))?.dueDay).toBe(25);
+    const due = Object.fromEntries(
+      (await getCyclesForCard(db, c.id)).map((cy) => [
+        cy.period,
+        cy.dueDateISO,
+      ]),
+    );
+    expect(due).toEqual({
+      '2025-08': '2025-09-09', // printed: kept
+      '2025-09': '2025-10-25', // from statement date 20 Sep (25 Sep is inside the gap)
+      '2025-10': '2025-11-25', // from last txn 19 Oct (25 Oct is inside the gap)
+    });
+    const cycles = await getCyclesForCard(db, c.id);
+    expect(cycles.every((cy) => cy.paidAt === '2025-01-01')).toBe(true);
+    expect((await db.get('cycles', ['other', '2025-09']))?.dueDateISO).toBe(
+      '2025-10-05',
+    );
+    db.close();
+  });
+
+  it('leaves a statement with no cycle row alone, and an anchorless one unknown', async () => {
+    const db = await openKardabraDb();
+    const c = card();
+    await putCard(db, c);
+    const noCycle = statement({ cardId: c.id, period: '2025-08' });
+    const empty = statement({ cardId: c.id, period: '2025-09', txnCount: 0 });
+    await putStatementWithTransactions(db, noCycle, []);
+    await putStatementWithTransactions(db, empty, []);
+    await upsertCycle(db, {
+      cardId: c.id,
+      period: '2025-09',
+      dueDateISO: null,
+      source: 'statement',
+    });
+
+    await setCardDueDay(db, c.id, 12);
+    await setCardDueDay(db, c.id, 20); // a second edit replaces the first
+
+    expect((await getCard(db, c.id))?.dueDay).toBe(20);
+    const cycles = await getCyclesForCard(db, c.id);
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0].dueDateISO).toBeNull();
+    db.close();
+  });
+
+  it('refuses a day outside 1-31', async () => {
+    const db = await openKardabraDb();
+    const c = card({ dueDay: 5 });
+    await putCard(db, c);
+    for (const bad of [0, 32, 2.5, NaN]) {
+      await expect(setCardDueDay(db, c.id, bad)).rejects.toThrow(RangeError);
+    }
+    expect((await getCard(db, c.id))?.dueDay).toBe(5);
+    db.close();
+  });
+
+  it('is a no-op for a missing card', async () => {
+    const db = await openKardabraDb();
+    await setCardDueDay(db, 'nope', 10);
+    expect(await getAllCards(db)).toEqual([]);
     db.close();
   });
 });

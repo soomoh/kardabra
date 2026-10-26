@@ -112,7 +112,7 @@ export interface CycleRecord {
   totalDue?: number;
   minDue?: number;
   /** Sum of the statement's debits (positive number), denormalized here
-   * at commit time so the dashboard can show "Spend ₹X" for banks whose
+   * at commit time so the dashboard can show "Spent this cycle ₹X" for banks whose
    * exports carry no Total Amount Due — spend is a fact we always have,
    * distinct from the bill amount, which stays honestly absent. This is
    * THE single source of truth for "what did this cycle cost" — every

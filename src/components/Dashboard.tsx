@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
 import {
@@ -18,14 +18,15 @@ import { formatDateLabel, todayISO } from '../lib/dates';
 import { formatINR } from '../lib/money';
 import { cycleKey, monthlyTrends, type MonthlyTrends } from '../lib/trends';
 import { statementsToCheckByCard } from '../lib/reconcile';
+import { billsIn, billsInCopy, type BillsIn } from '../lib/billsIn';
 import CardTile from './CardTile';
 import TrendsChart from './TrendsChart';
 import { useDocumentTitle } from './useDocumentTitle';
 import { XIcon } from './icons';
-import type { View } from '../App';
+import type { View } from '../lib/route';
 
 interface DashboardProps {
-  setView: (view: View) => void;
+  navigate: (view: View, options?: { replace?: boolean }) => void;
   /** Shown once on arrival, e.g. what an import just did. */
   notice?: string;
 }
@@ -35,7 +36,7 @@ interface DashboardProps {
 // empty gap where the chart belongs, which reads as a bug, not restraint.
 const MIN_STATEMENTS_FOR_TRENDS = 1;
 
-function Dashboard({ setView, notice }: DashboardProps) {
+function Dashboard({ navigate, notice }: DashboardProps) {
   const db = useDb();
   const reportError = useReportError();
   const { version, bump } = useDataVersion();
@@ -43,6 +44,10 @@ function Dashboard({ setView, notice }: DashboardProps) {
   const [trends, setTrends] = useState<MonthlyTrends | null>(null);
   const [statementCount, setStatementCount] = useState(0);
   const [toCheck, setToCheck] = useState<Map<string, number>>(new Map());
+  // Computed with the day it was loaded on, so its words and numbers agree.
+  const [bills, setBills] = useState<{ result: BillsIn; today: string } | null>(
+    null,
+  );
   useDocumentTitle('Dashboard');
 
   useEffect(() => {
@@ -73,6 +78,8 @@ function Dashboard({ setView, notice }: DashboardProps) {
       setStatementCount(statements.length);
       setToCheck(statementsToCheckByCard(statements, transactions));
       setTrends(monthlyTrends(cards, cycles, unpaidKeys));
+      const today = todayISO();
+      setBills({ result: billsIn(cards, statements, cycles, today), today });
     })().catch(reportError);
 
     return () => {
@@ -80,7 +87,21 @@ function Dashboard({ setView, notice }: DashboardProps) {
     };
   }, [db, version, reportError]);
 
+  // Cards with a paid/unpaid write in flight: a double click must not
+  // toggle twice (paid, then straight back to unpaid).
+  const toggling = useRef(new Set<string>());
+
   async function handleTogglePaid(cardId: string, cycle: CycleRecord) {
+    if (toggling.current.has(cardId)) return;
+    toggling.current.add(cardId);
+    try {
+      await togglePaid(cardId, cycle);
+    } finally {
+      toggling.current.delete(cardId);
+    }
+  }
+
+  async function togglePaid(cardId: string, cycle: CycleRecord) {
     // Toggle: an already-paid cycle un-pays (paidAt -> null); an unpaid
     // one is marked paid as of today.
     const nextPaidAt = cycle.paidAt === undefined ? todayISO() : null;
@@ -110,7 +131,10 @@ function Dashboard({ setView, notice }: DashboardProps) {
           Import your credit-card statements to see what you owe, when it's due,
           and where the money went. Everything stays on this device.
         </p>
-        <button className="primary" onClick={() => setView({ name: 'import' })}>
+        <button
+          className="primary"
+          onClick={() => navigate({ name: 'import' })}
+        >
           Import statements
         </button>
       </div>
@@ -118,6 +142,11 @@ function Dashboard({ setView, notice }: DashboardProps) {
   }
 
   const sorted = sortDashboardCards(entries);
+  // Most urgent first, so the first card that needs paying holds the
+  // page's one primary action.
+  const primaryCardId = sorted.find(
+    ({ cycle }) => cycle !== null && cycleNeedsPayment(cycle),
+  )?.card.id;
 
   return (
     <div>
@@ -128,7 +157,7 @@ function Dashboard({ setView, notice }: DashboardProps) {
             className="icon-button"
             aria-label="Dismiss"
             onClick={() => {
-              setView({ name: 'dashboard' });
+              navigate({ name: 'dashboard' });
               // The button disappears; keep focus on the page, not <body>.
               document.querySelector<HTMLElement>('main')?.focus();
             }}
@@ -137,7 +166,9 @@ function Dashboard({ setView, notice }: DashboardProps) {
           </button>
         </div>
       )}
-      <Headline entries={entries} />
+      {bills !== null && (
+        <Headline entries={entries} bills={bills.result} today={bills.today} />
+      )}
 
       <div className="card-grid">
         {sorted.map(({ card, cycle }) => (
@@ -146,7 +177,7 @@ function Dashboard({ setView, notice }: DashboardProps) {
             card={card}
             cycle={cycle}
             statementsToCheck={toCheck.get(card.id) ?? 0}
-            onOpen={() => setView({ name: 'card', cardId: card.id })}
+            primary={card.id === primaryCardId}
             onTogglePaid={() => {
               if (cycle !== null)
                 void handleTogglePaid(card.id, cycle).catch(reportError);
@@ -168,43 +199,67 @@ function Dashboard({ setView, notice }: DashboardProps) {
 
 /** What you owe across all cards, and by when: the dashboard's headline.
  * Paise are drawn smaller so the rupees read first. */
-function Headline({ entries }: { entries: CardWithCycle[] }) {
-  const { count, total, isEstimate, nextDueISO } = unpaidTotals(entries);
+function Headline({
+  entries,
+  bills,
+  today,
+}: {
+  entries: CardWithCycle[];
+  bills: BillsIn;
+  today: string;
+}) {
+  const { count, total, isEstimate } = unpaidTotals(entries);
+  const copy = billsInCopy(bills, today);
+  const notes = copy.notes.length > 0 && (
+    <ul className="hero-notes">
+      {copy.notes.map((note, index) => (
+        // Notes can repeat (two cards may share a nickname); order is stable.
+        <li key={index}>{note}</li>
+      ))}
+    </ul>
+  );
   if (count === 0) {
     return (
       <header className="dashboard-header">
         <h1 className="hero-amount">All caught up</h1>
         <p className="hero-sub">No unpaid bills on any card.</p>
+        {notes}
       </header>
     );
   }
   const formatted = total === null ? null : formatINR(total);
   const dot = formatted?.lastIndexOf('.') ?? -1;
-  const bills = count === 1 ? '1 card' : `${count} cards`;
   return (
     <header className="dashboard-header">
-      <p className="hero-label">{isEstimate ? 'To pay, about' : 'To pay'}</p>
-      <h1 className="hero-amount amount">
-        {formatted === null ? (
-          `${count} unpaid`
-        ) : dot === -1 ? (
-          formatted
-        ) : (
-          <>
-            {formatted.slice(0, dot)}
-            <span className="paise">{formatted.slice(dot)}</span>
-          </>
-        )}
+      {/* The label is part of the heading, so heading navigation reads
+          "To pay ₹9,500.00", not a bare amount. */}
+      <h1 className="hero-heading">
+        <span className="hero-label">
+          {isEstimate ? 'To pay, about' : 'To pay'}
+        </span>
+        <span className="hero-amount amount">
+          {formatted === null ? (
+            `${count} unpaid`
+          ) : dot === -1 ? (
+            formatted
+          ) : (
+            <>
+              {formatted.slice(0, dot)}
+              <span className="paise">{formatted.slice(dot)}</span>
+            </>
+          )}
+        </span>
       </h1>
       <p className="hero-sub">
-        across {bills}
-        {nextDueISO !== null && (
+        {copy.lead !== null && `${copy.lead}. `}
+        {copy.dueISO !== null && (
           <>
-            {' '}
-            · next bill due <strong>{formatDateLabel(nextDueISO)}</strong>
+            {copy.duePrefix}{' '}
+            <strong>{formatDateLabel(copy.dueISO, today)}</strong>.
           </>
         )}
       </p>
+      {notes}
     </header>
   );
 }

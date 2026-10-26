@@ -18,12 +18,11 @@ import { formatINR } from './money';
 /** The unpaid bills across all cards, as numbers: what the dashboard's
  * headline is built from. `total` is null when some unpaid cycle has
  * neither a bill nor a spend figure — a partial sum must not pass for the
- * total. `nextDueISO` is the earliest due date among the unpaid bills. */
+ * total. */
 export interface UnpaidTotals {
   count: number;
   total: number | null;
   isEstimate: boolean;
-  nextDueISO: string | null;
 }
 
 export function unpaidTotals(entries: CardWithCycle[]): UnpaidTotals {
@@ -38,15 +37,10 @@ export function unpaidTotals(entries: CardWithCycle[]): UnpaidTotals {
   const total = amounts.some((amount) => amount === undefined)
     ? null
     : amounts.reduce((sum: number, a) => sum + (a ?? 0), 0);
-  const dueDates = unpaidCycles
-    .map((cycle) => cycle.dueDateISO)
-    .filter((d): d is string => d !== null)
-    .sort();
   return {
     count: unpaidCycles.length,
     total,
     isEstimate: unpaidCycles.some((cycle) => cycle.totalDue === undefined),
-    nextDueISO: dueDates[0] ?? null,
   };
 }
 

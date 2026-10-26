@@ -3,6 +3,9 @@ import {
   clampDayToMonth,
   nextDueDateISO,
   nextDueDateWithGraceISO,
+  cycleDueDateISO,
+  previousPeriod,
+  periodsBetween,
   daysBetweenISO,
   todayISO,
   formatPeriodLabel,
@@ -104,15 +107,18 @@ describe('todayISO', () => {
   });
 });
 
-describe('display formatters (Indian conventions, not US month-first)', () => {
-  it('formatPeriodLabel: YYYY-MM -> MM-YYYY', () => {
-    expect(formatPeriodLabel('2026-05')).toBe('05-2026');
-    expect(formatPeriodLabel('2025-12')).toBe('12-2025');
+describe('display formatters (day first, never all-number)', () => {
+  it("formatPeriodLabel: YYYY-MM -> 'Oct 2025'", () => {
+    expect(formatPeriodLabel('2026-05')).toBe('May 2026');
+    expect(formatPeriodLabel('2025-12')).toBe('Dec 2025');
+    expect(formatPeriodLabel('2025-01')).toBe('Jan 2025');
   });
 
-  it('formatDateLabel: YYYY-MM-DD -> DD-MM-YYYY', () => {
-    expect(formatDateLabel('2025-09-20')).toBe('20-09-2025');
-    expect(formatDateLabel('2025-11-09')).toBe('09-11-2025');
+  it("formatDateLabel: '2 Nov', with the year only when it isn't this year", () => {
+    expect(formatDateLabel('2025-11-02', '2025-12-31')).toBe('2 Nov');
+    expect(formatDateLabel('2025-09-20', '2025-01-01')).toBe('20 Sep');
+    expect(formatDateLabel('2024-12-31', '2025-01-01')).toBe('31 Dec 2024');
+    expect(formatDateLabel('2026-01-05', '2025-12-28')).toBe('5 Jan 2026');
   });
 
   it('malformed input is returned unchanged, not mangled', () => {
@@ -129,5 +135,33 @@ describe('periodAxisLabel', () => {
   it('falls back to the raw text when it is not a period', () => {
     expect(periodAxisLabel('2025-13')).toEqual({ month: '2025-13', year: '' });
     expect(periodAxisLabel('junk')).toEqual({ month: 'junk', year: '' });
+  });
+});
+
+describe('cycleDueDateISO', () => {
+  it('the printed date wins over any projection', () => {
+    expect(cycleDueDateISO('2025-11-02', '2025-10-15', 20)).toBe('2025-11-02');
+  });
+  it('projects the due day from the anchor, past the grace gap', () => {
+    expect(cycleDueDateISO(undefined, '2025-10-15', 20)).toBe('2025-11-20');
+  });
+  it('is null (unknown) without a due day or an anchor', () => {
+    expect(cycleDueDateISO(undefined, '2025-10-15', undefined)).toBeNull();
+    expect(cycleDueDateISO(undefined, null, 20)).toBeNull();
+  });
+});
+
+describe('previousPeriod / periodsBetween', () => {
+  it('steps back a month, across a year', () => {
+    expect(previousPeriod('2025-10')).toBe('2025-09');
+    expect(previousPeriod('2025-01')).toBe('2024-12');
+  });
+  it('lists the missing months, oldest first', () => {
+    expect(periodsBetween('2025-07', '2025-09')).toEqual(['2025-08']);
+    expect(periodsBetween('2025-11', '2026-02')).toEqual([
+      '2025-12',
+      '2026-01',
+    ]);
+    expect(periodsBetween('2025-07', '2025-08')).toEqual([]);
   });
 });

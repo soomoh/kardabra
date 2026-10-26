@@ -190,9 +190,12 @@ export function passwordCandidates(
   return out;
 }
 
-/** Parse a typed date of birth: DD/MM/YYYY, DD-MM-YYYY or DD.MM.YYYY. */
+/** Parse a typed date of birth: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, or
+ * DDMMYYYY — a phone's number pad has no separators to type. */
 export function parseDob(text: string): PasswordInputs['dob'] | null {
-  const m = /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\s*$/.exec(text);
+  const m =
+    /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\s*$/.exec(text) ??
+    /^\s*(\d{2})(\d{2})(\d{4})\s*$/.exec(text);
   if (!m) return null;
   const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
   const date = new Date(Date.UTC(year, month - 1, day));

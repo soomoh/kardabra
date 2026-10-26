@@ -159,7 +159,6 @@ describe('unpaidTotals — the dashboard headline numbers', () => {
       count: 2,
       total: 1500,
       isEstimate: false,
-      nextDueISO: '2025-11-04',
     });
   });
 
@@ -171,7 +170,6 @@ describe('unpaidTotals — the dashboard headline numbers', () => {
       count: 1,
       total: 300,
       isEstimate: true,
-      nextDueISO: null,
     });
   });
 
@@ -188,7 +186,6 @@ describe('unpaidTotals — the dashboard headline numbers', () => {
       count: 0,
       total: 0,
       isEstimate: false,
-      nextDueISO: null,
     });
   });
 });

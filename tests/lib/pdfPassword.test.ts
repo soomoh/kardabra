@@ -56,13 +56,16 @@ describe('passwordCandidates', () => {
 });
 
 describe('parseDob', () => {
-  it.each(['20/10/1990', '20-10-1990', '20.10.1990', ' 20/10/1990 '])(
-    '%s',
-    (text) => {
-      expect(parseDob(text)).toEqual({ day: 20, month: 10, year: 1990 });
-    },
-  );
-  it.each(['31/02/1990', '1990-10-20', '20/10/90', ''])(
+  it.each([
+    '20/10/1990',
+    '20-10-1990',
+    '20.10.1990',
+    ' 20/10/1990 ',
+    '20101990',
+  ])('%s', (text) => {
+    expect(parseDob(text)).toEqual({ day: 20, month: 10, year: 1990 });
+  });
+  it.each(['31/02/1990', '1990-10-20', '20/10/90', '', '2010199', '31021990'])(
     'rejects %s',
     (text) => {
       expect(parseDob(text)).toBeNull();

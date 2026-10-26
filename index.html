@@ -9,6 +9,33 @@
       content="Kardabra — a private, on-device credit-card statement tracker."
     />
     <title>Kardabra</title>
+    <script>
+      // Theme before first paint, so dark mode never flashes light. The
+      // choice is mirrored from the settings store by src/lib/theme.ts
+      // (keep the key and event name in step); "system" follows the OS live.
+      (function () {
+        var root = document.documentElement;
+        var dark = matchMedia('(prefers-color-scheme: dark)');
+        var choice = 'system';
+        try {
+          choice = localStorage.getItem('kardabra-theme') || choice;
+        } catch (e) {}
+        function apply() {
+          root.dataset.theme =
+            choice === 'light' || choice === 'dark'
+              ? choice
+              : dark.matches
+                ? 'dark'
+                : 'light';
+        }
+        apply();
+        dark.addEventListener('change', apply);
+        addEventListener('kardabra-theme', function (event) {
+          choice = event.detail;
+          apply();
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

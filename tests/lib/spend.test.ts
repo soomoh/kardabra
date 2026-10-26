@@ -10,11 +10,35 @@ import {
 } from '../../src/lib/spend';
 
 describe('priorExpectedDue', () => {
+  const sep = { period: '2025-09' };
   it("is the prior statement's total, else its spend, else nothing", () => {
-    expect(priorExpectedDue({ totalDue: 900 }, { spend: 700 })).toBe(900);
-    expect(priorExpectedDue({}, { spend: 700 })).toBe(700);
-    expect(priorExpectedDue({}, undefined)).toBeNull();
-    expect(priorExpectedDue(undefined, { spend: 700 })).toBeNull();
+    expect(
+      priorExpectedDue('2025-10', { ...sep, totalDue: 900 }, { spend: 700 }),
+    ).toBe(900);
+    expect(priorExpectedDue('2025-10', sep, { spend: 700 })).toBe(700);
+    expect(priorExpectedDue('2025-10', sep, undefined)).toBeNull();
+    expect(priorExpectedDue('2025-10', undefined, { spend: 700 })).toBeNull();
+  });
+
+  it('is nothing when the previous month is missing (July → September)', () => {
+    // September's payment paid August's bill, not July's.
+    expect(
+      priorExpectedDue(
+        '2025-09',
+        { period: '2025-07', totalDue: 900 },
+        undefined,
+      ),
+    ).toBeNull();
+  });
+
+  it('crosses the year boundary', () => {
+    expect(
+      priorExpectedDue(
+        '2026-01',
+        { period: '2025-12', totalDue: 900 },
+        undefined,
+      ),
+    ).toBe(900);
   });
 
   it('allows 0.5% of what was owed, at least ₹1', () => {

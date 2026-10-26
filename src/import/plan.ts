@@ -19,6 +19,7 @@ import type {
 import { StatementError } from '../parser';
 import type { CardRecord, StatementRecord } from '../db/schema';
 import { statementFingerprint } from '../lib/txnId';
+import { confirmedIssuer } from '../lib/bankDetect';
 
 /** One file's parse outcome, as the caller (which actually calls
  * `parseStatementBytes` inside a try/catch) hands it to `planImport`.
@@ -154,6 +155,7 @@ function resolveCardRef(
   assignment?: string,
 ): CardRef {
   const { last4 } = parsed;
+  const issuer = confirmedIssuer(parsed);
   const assigned =
     assignment === undefined || assignment === NEW_CARD
       ? undefined
@@ -180,7 +182,15 @@ function resolveCardRef(
   }
 
   if (last4 === null) {
-    return { kind: 'new', last4: null, suggestedNickname: 'New card' };
+    // No number to name it by: the issuer, when the statement itself names
+    // one. Never a placeholder like "New card", which reads as unfinished
+    // on the dashboard, and never a file-name guess (review shows that as
+    // "likely …" beside the name instead).
+    return {
+      kind: 'new',
+      last4: null,
+      suggestedNickname: issuer ? `${issuer} card` : 'Unnamed card',
+    };
   }
 
   const existing = automatic
@@ -200,7 +210,7 @@ function resolveCardRef(
   const fresh: CardRef = {
     kind: 'new',
     last4,
-    suggestedNickname: `Card ····${last4.replace(/X/g, '')}`,
+    suggestedNickname: `${issuer ?? 'Card'} ····${last4.replace(/X/g, '')}`,
   };
   newCardsByLast4.set(last4, fresh);
   return fresh;

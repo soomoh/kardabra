@@ -16,6 +16,13 @@ const VIEWPORTS = [
 ] as const;
 
 async function shot(page: Page, name: string) {
+  // Nothing may widen the page sideways (a phone would scroll horizontally).
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+    `${name}: page wider than the viewport`,
+  ).toBe(true);
   await page.screenshot({
     path: test.info().outputPath(`${name}.png`),
     fullPage: true,
@@ -48,7 +55,12 @@ async function seedHistory(page: Page) {
           period,
           dueDateISO: null,
           source: 'statement',
-          spend: 4000 + ((k * 3 + i * 7) % 9) * 2100 + i * 3000,
+          // The latest seeded month is small and uneven (₹3,000 / ₹500 /
+          // ₹1,200), to check that segment sizes stay proportional.
+          spend:
+            k === 1
+              ? [3000, 500, 1200][i % 3]
+              : 4000 + ((k * 3 + i * 7) % 9) * 2100 + i * 3000,
           paidAt: '2025-01-01',
         });
       }
@@ -63,10 +75,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
       test.use({ colorScheme, viewport, deviceScaleFactor: 1 });
 
       test('screens', async ({ page }) => {
+        // When the fixture statements are current, so due dates, statuses
+        // and the "bills are in" headline read as they would in use.
+        await page.clock.setFixedTime(new Date('2025-11-10T10:00:00'));
         await page.goto('/');
         await shot(page, 'empty');
 
-        await page.getByRole('button', { name: 'Import', exact: true }).click();
+        await page.getByRole('link', { name: 'Import', exact: true }).click();
         await page
           .locator('#statement-file-input')
           .setInputFiles(fixture('pdf_statement_locked.pdf'));
@@ -102,6 +117,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await page.reload();
         await expect(page.locator('.trends-section')).toBeVisible();
         await shot(page, 'dashboard');
+        // The small month's breakdown, opened by tapping its column.
+        await page.locator('.trends-hit').nth(4).click();
+        await expect(page.locator('.trends-tooltip')).toBeVisible();
+        await shot(page, 'chart-month');
+        await page.keyboard.press('Escape');
         await page.getByRole('button', { name: 'View as table' }).click();
         await shot(page, 'trends-table');
 

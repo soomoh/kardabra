@@ -9,6 +9,7 @@ import {
   putCard,
   deleteCardCascade,
   setPaymentOverride,
+  setCardDueDay,
 } from '../db/db';
 import type {
   CardRecord,
@@ -22,15 +23,15 @@ import { todayISO } from '../lib/dates';
 import CardHeader from './CardHeader';
 import StatementList from './StatementList';
 import StatementTransactions from './StatementTransactions';
-import type { View } from '../App';
+import { routeHash, type View } from '../lib/route';
 import { useDocumentTitle } from './useDocumentTitle';
 
 interface CardDetailProps {
   cardId: string;
-  setView: (view: View) => void;
+  navigate: (view: View, options?: { replace?: boolean }) => void;
 }
 
-function CardDetail({ cardId, setView }: CardDetailProps) {
+function CardDetail({ cardId, navigate }: CardDetailProps) {
   const db = useDb();
   const reportError = useReportError();
   const { version, bump } = useDataVersion();
@@ -41,7 +42,9 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // The card was deleted (another tab) or the id is stale.
   const [missing, setMissing] = useState(false);
-  useDocumentTitle(missing ? 'Card not found' : (card?.nickname ?? null));
+  // 'Card' while loading, so Back/Forward never leaves the previous page's
+  // title on this one.
+  useDocumentTitle(missing ? 'Card not found' : (card?.nickname ?? 'Card'));
 
   useEffect(() => {
     let cancelled = false;
@@ -73,12 +76,9 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
   }, [db, cardId, version, reportError]);
 
   const backLink = (
-    <button
-      className="back-link"
-      onClick={() => setView({ name: 'dashboard' })}
-    >
-      &larr; Back to dashboard
-    </button>
+    <a className="back-link" href={routeHash({ name: 'dashboard' })}>
+      <span aria-hidden="true">&larr;</span> Back to dashboard
+    </a>
   );
 
   if (missing) {
@@ -109,10 +109,16 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
     bump();
   }
 
+  async function saveDueDay(dueDay: number) {
+    await setCardDueDay(db, cardId, dueDay);
+    bump();
+  }
+
   async function deleteCard() {
     await deleteCardCascade(db, cardId);
     bump();
-    setView({ name: 'dashboard' });
+    // Replace, so Back doesn't land on the deleted card.
+    navigate({ name: 'dashboard' }, { replace: true });
   }
 
   async function savePaymentOverride(marks: PaymentMark[] | undefined) {
@@ -129,7 +135,9 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
         statementCount={statements.length}
         transactionCount={transactions.length}
         feeNet={annualFeeNet(transactions, todayISO())}
+        needsDueDay={statements.some((s) => s.dueDateISO === undefined)}
         onSave={saveCard}
+        onSaveDueDay={saveDueDay}
         onDelete={deleteCard}
       />
       <StatementList
@@ -148,6 +156,7 @@ function CardDetail({ cardId, setView }: CardDetailProps) {
             .sort((a, b) => a.dateISO.localeCompare(b.dateISO))}
           cycle={cyclesByPeriod.get(selected.period)}
           priorExpectedDue={priorExpectedDue(
+            selected.period,
             prior,
             prior && cyclesByPeriod.get(prior.period),
           )}
