@@ -115,3 +115,19 @@ it('reports unreadable files, not understood skips', () => {
     ['bug.csv', 'failed', undefined],
   ]);
 });
+
+it('statements of a card showing two digits group into one card', () => {
+  const outcomes = planImport(
+    [
+      file('jan.pdf', 'XX34', '2026-01-13', '2026-02-02'),
+      file('feb.pdf', 'XX34', '2026-02-13', '2026-03-04'),
+    ],
+    [],
+    [],
+  );
+  expect([...questionOwners(outcomes).name]).toEqual(['jan.pdf']);
+  const [jan] = outcomes;
+  expect(jan.kind === 'new-statement' && jan.cardRef).toMatchObject({
+    suggestedNickname: 'Card ····34',
+  });
+});

@@ -57,6 +57,10 @@ const hasDigit = (s: string) => /\d/.test(s);
 const DATE_START =
   /^(\d|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
 const hasLetter = (s: string) => /[A-Za-z]/.test(s);
+// A foreign-currency amount printed on an international row ("USD 13.24",
+// "14.24 USD"). It describes the purchase; the rupee amount is the money.
+const FOREIGN_AMOUNT =
+  /^(?:(?!INR\b)[A-Z]{3}\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s*(?!INR\b)[A-Z]{3})$/;
 const center = (c: Cell) => (c.x0 + c.x1) / 2;
 const overlaps = (a: Cell, b: Cell, slack = 0) =>
   a.x0 - slack < b.x1 && b.x0 - slack < a.x1;
@@ -166,6 +170,9 @@ function columnOf(line: Line, columns: Cell[]): number[] {
     // can sit nearer the Date header (SBI). The date column only takes what
     // looks like a date; any other text belongs to the description.
     if (best === dateCol && !DATE_START.test(item.text)) best = descCol;
+    // With no column of its own, a foreign amount lands nearest Amount and
+    // spoils the rupee amount there; it belongs with the description.
+    if (FOREIGN_AMOUNT.test(item.text) && descCol >= 0) best = descCol;
     return best;
   });
 }

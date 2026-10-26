@@ -12,6 +12,9 @@ import { StatementError } from './errors';
 import type { ParseWarning, Transaction } from './types';
 
 const PARSEABLE_CHAR = /[0-9A-Za-z]/;
+// Words, not lone letters: PDFs render ₹ as "C", so a summary box under the
+// table ("9 C 11,853.34", "C 10.56 C 0") has a letter but no word.
+const hasWord = (text: string) => /[A-Za-z]{2,}/.test(text);
 const MONTH_START =
   /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d/i;
 
@@ -144,7 +147,7 @@ export function extractTransactionsWithWarnings(
         canContinue &&
         txns.length > 0 &&
         (dateCell === '' || textInDateCol) &&
-        /[A-Za-z]/.test(words) &&
+        hasWord(words) &&
         !lineMatches(END_LINES, words) &&
         !lineMatches(BALANCE_LINES, words)
       ) {
@@ -167,7 +170,7 @@ export function extractTransactionsWithWarnings(
         // looks like a transaction (digits in the date cell, a worded
         // description), skip it LOUDLY; anything else is the table ending
         // (HDFC's rewards block puts numbers under the table).
-        if (/\d/.test(dateCell) && /[A-Za-z]/.test(description)) {
+        if (/\d/.test(dateCell) && hasWord(description)) {
           warnings.push({
             kind: 'skipped-row',
             row: rowIndex,

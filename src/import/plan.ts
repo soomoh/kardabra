@@ -179,7 +179,7 @@ function resolveCardRef(
   const fresh: CardRef = {
     kind: 'new',
     last4,
-    suggestedNickname: `Card ····${last4}`,
+    suggestedNickname: `Card ····${last4.replace(/X/g, '')}`,
   };
   newCardsByLast4.set(last4, fresh);
   return fresh;

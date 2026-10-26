@@ -14,15 +14,24 @@ import { StatementError } from './errors';
 // masking, e.g. "4000 12XX XXXX 1111", "4111XXXXXXXX2222", "400012******3333".
 const MASKED_NUMBER = /(?<![\dXx*])[\dXx*]{12,19}(?![\dXx*])/g;
 
-function maskedLast4(cell: string, minLen: number): string | null {
+/** The last four characters of a masked number in `cell`. Normally all four
+ * are digits; with `minDigits` 2 a number showing only its last two (SBI:
+ * "XXXX XXXX XXXX XX34") yields "XX34", which still tells one card's
+ * statements from another's month after month. */
+function maskedLast4(
+  cell: string,
+  minLen: number,
+  minDigits = 4,
+): string | null {
   const tokens = cell.replace(/ /g, '').match(MASKED_NUMBER) ?? [];
   for (const token of tokens) {
+    const trailingDigits = /\d*$/.exec(token)![0].length;
     if (
       token.length >= minLen &&
       /[Xx*]/.test(token) &&
-      /^\d{4}$/.test(token.slice(-4))
+      trailingDigits >= minDigits
     ) {
-      return token.slice(-4);
+      return token.slice(-4).replace(/[x*]/g, 'X');
     }
   }
   return null;
@@ -95,6 +104,15 @@ export function accountLast4(
     if (line.includes('card')) {
       for (const cell of cells) {
         const last4 = maskedLast4(cell, 12);
+        if (last4) return last4;
+      }
+    }
+  }
+  // 1b. the same, when the bank shows only the last two digits (SBI)
+  for (const { line, cells } of items) {
+    if (line.includes('card')) {
+      for (const cell of cells) {
+        const last4 = maskedLast4(cell, 12, 2);
         if (last4) return last4;
       }
     }

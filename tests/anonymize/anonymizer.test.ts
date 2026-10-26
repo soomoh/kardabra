@@ -104,6 +104,14 @@ describe('card numbers, identifiers, words', () => {
     expect(a).not.toContain('4321');
   });
 
+  it('keeps the mask of a number that shows only its last digits (SBI)', () => {
+    const anon = createAnonymizer(SEED);
+    const a = anon.text('XXXX XXXX XXXX XX34');
+    expect(a).toMatch(/^XXXX XXXX XXXX XX\d\d$/);
+    expect(a).not.toMatch(/34$/);
+    expect(anon.text('XXXX XXXX XXXX XX34')).toBe(a);
+  });
+
   it('randomises other digit runs at the same length', () => {
     const out = createAnonymizer(SEED).text('Ref# ST574325291891941');
     expect(out).toMatch(/^\w{3}# [A-Z]{2}\d{15}$/);

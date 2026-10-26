@@ -61,6 +61,8 @@ export interface ParseWarning {
  * one file. */
 export interface ParsedStatement {
   fileName: string;
+  /** Last four digits of the card number, or "XX34" when the bank shows
+   * only two (account.ts); null when none was found. */
   last4: string | null;
   /** ISO 4217 code inferred from the statement text (₹/Rs/INR → 'INR');
    * 'INR' when nothing says otherwise. */

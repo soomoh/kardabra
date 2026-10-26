@@ -66,6 +66,8 @@ const TOKEN_RE = new RegExp(
     // Masked card number: 4 digits, then digits/spaces/dashes including at
     // least one mask character, ending in digits ("4823 41XX XXXX 4321").
     String.raw`(?<card>\b\d{4}(?=[\d \-]*[Xx*])[\d \-Xx*]*?\d{2,4}\b)`,
+    // Fully masked except the last digits ("XXXX XXXX XXXX XX34", SBI).
+    String.raw`(?<maskedCard>(?<![\p{L}\d*])[Xx*]{4}(?:[ \-]?[Xx*]{2,4}){1,3}[ \-]?\d{2,4}(?![\p{L}\d]))`,
     // Amounts: grouped ("1,23,456.00"), decimal ("925.65"), or a whole
     // number right after a currency marker ("INR 0", "₹ 2500").
     String.raw`(?<amount>(?<![\d.,])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?(?![\d,])|(?<![\d.,])\d+\.\d{1,2}(?![\d.])|(?<=(?:₹|\bRs\.?|\bINR)\s?)\d+(?![\d.,]))`,
@@ -282,6 +284,7 @@ export function createAnonymizer(
       const prefix = match.slice(0, 4);
       return prefix + match.slice(4).replace(/\d+/g, (run) => fakeDigits(run));
     }
+    if (groups.maskedCard) return fakeDigitsIn(match); // keep the mask
     if (groups.amount) return scaleAmount(match);
     if (groups.digits) return fakeDigits(match);
     if (groups.word) {

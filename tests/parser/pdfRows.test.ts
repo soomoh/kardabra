@@ -325,3 +325,73 @@ it('finds the card number below a long summary block (HDFC: ~90 label pairs)', (
   ]);
   expect(last4).toBe('4242');
 });
+
+it('identifies an SBI card that shows only the last two digits', () => {
+  const { last4 } = parsePdfText('x.pdf', [
+    page(
+      t('Credit Card Number', 324, 945),
+      t('XXXX XXXX XXXX XX34', 317, 925),
+      t('DATE', 50, 600),
+      t('TRANSACTION DESCRIPTION', 140, 600),
+      t('AMOUNT', 500, 600),
+      t('20/01/2026', 50, 580),
+      t('CAFE ONE', 140, 580),
+      t('300.00', 500, 580),
+    ),
+  ]);
+  expect(last4).toBe('XX34');
+});
+
+describe('HDFC international rows and summary boxes (no rewards column)', () => {
+  const header = [
+    t('Statement Date', 50, 700),
+    t('13/02/2026', 200, 700),
+    t('DATE & TIME', 26, 480),
+    t('TRANSACTION DESCRIPTION', 149, 480),
+    t('AMOUNT', 525, 480),
+  ];
+
+  it('keeps a row whose foreign amount has no column of its own', () => {
+    const { transactions } = parsePdfText('x.pdf', [
+      page(
+        ...header,
+        t('29/03/2026 | 10:00', 26, 452),
+        t('SHOP ABROAD', 149, 452),
+        t('USD 13.24', 413, 452),
+        t('C', 529, 452, 4),
+        t('1254.11', 535, 452),
+      ),
+    ]);
+    expect(transactions).toEqual([
+      {
+        dateISO: '2026-03-29',
+        payee: 'SHOP ABROAD USD 13.24',
+        amount: -1254.11,
+      },
+    ]);
+  });
+
+  it('ignores an EMI box and a GST summary under the table', () => {
+    const { transactions, warnings } = parsePdfText('x.pdf', [
+      page(
+        ...header,
+        t('20/01/2026 | 10:00', 26, 452),
+        t('CAFE ONE', 149, 452),
+        t('300.00', 535, 452),
+        // "TRANSACTIONS converted to EMI: 9, ₹11,853.34" (₹ rendered "C")
+        t('9', 226, 380),
+        t('C', 360, 380, 4),
+        t('11,853.34', 365, 380),
+        // GST summary: "₹10.56 ₹0 ₹0"
+        t('C', 26, 300, 4),
+        t('10.56', 31, 300),
+        t('C', 135, 300, 4),
+        t('0', 140, 300),
+        t('C', 247, 300, 4),
+        t('0', 252, 300),
+      ),
+    ]);
+    expect(transactions.map((txn) => txn.amount)).toEqual([-300]);
+    expect(warnings).toEqual([]);
+  });
+});
