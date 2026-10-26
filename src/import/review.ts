@@ -6,6 +6,7 @@
 
 import { isValidDueDay } from '../lib/dates';
 import { cardInputKey, type FileOutcome } from './plan';
+import type { CardRecord } from '../db/schema';
 import type { CommitResult, CommitUserInput } from './commit';
 
 /** An outcome's own file name, whichever variant it is ('new-statement'
@@ -152,4 +153,39 @@ export function importedNotice(result: CommitResult): string {
         ? ', 1 new card'
         : `, ${cardsCreated} new cards`;
   return `Imported ${statements}${cards}.`;
+}
+
+/** "Which card is this?" — asked per file when no confident match exists:
+ * the statement's card number couldn't be read (and cards already exist),
+ * or its last digits match more than one card (SBI prints only two). A
+ * re-import recognised by its contents is confident, so it isn't asked.
+ * Once answered, the question stays so the answer can be changed.
+ * Returns file name → the cards to choose from (plus "a new card"). */
+export function cardQuestions(
+  outcomes: FileOutcome[],
+  existingCards: Pick<CardRecord, 'id' | 'nickname' | 'last4'>[],
+  assignments: ReadonlyMap<string, string>,
+): Map<string, { cardId: string; nickname: string }[]> {
+  const questions = new Map<string, { cardId: string; nickname: string }[]>();
+  if (existingCards.length === 0) return questions;
+  const option = (card: Pick<CardRecord, 'id' | 'nickname'>) => ({
+    cardId: card.id,
+    nickname: card.nickname,
+  });
+  for (const outcome of outcomes) {
+    if (outcome.kind !== 'new-statement' && outcome.kind !== 'duplicate') {
+      continue;
+    }
+    const fileName = outcomeFileName(outcome);
+    const { last4 } = outcome.parsed;
+    const matches =
+      last4 === null ? [] : existingCards.filter((c) => c.last4 === last4);
+    const unreadable = last4 === null && outcome.kind === 'new-statement';
+    if (matches.length >= 2) {
+      questions.set(fileName, matches.map(option));
+    } else if (unreadable || assignments.has(fileName)) {
+      questions.set(fileName, existingCards.map(option));
+    }
+  }
+  return questions;
 }

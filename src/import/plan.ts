@@ -88,6 +88,10 @@ export type FileOutcome =
  * merged), so the introducing file's own name stands in as a key that's
  * at least guaranteed unique within one batch.
  */
+/** A card assignment's value meaning "this file is a card not yet in
+ * Kardabra" (any other value is an existing card's id). */
+export const NEW_CARD = 'new';
+
 export function cardInputKey(cardRef: CardRef, fileName: string): string {
   if (cardRef.kind === 'existing') return cardRef.cardId;
   return cardRef.last4 ?? `new:${fileName}`;
@@ -145,11 +149,26 @@ function resolveCardRef(
   existingCards: CardRecord[],
   existingStatements: StatementRecord[],
   newCardsByLast4: Map<string, CardRef>,
+  /** The user's answer to "Which card is this?", when given: an existing
+   * card's id or NEW_CARD. It overrides every automatic match. */
+  assignment?: string,
 ): CardRef {
   const { last4 } = parsed;
+  const assigned =
+    assignment === undefined || assignment === NEW_CARD
+      ? undefined
+      : existingCards.find((card) => card.id === assignment);
+  if (assigned !== undefined) {
+    return {
+      kind: 'existing',
+      cardId: assigned.id,
+      nickname: assigned.nickname,
+    };
+  }
+  const automatic = assignment !== NEW_CARD;
   // The same file imported again belongs to the card it went to last time —
   // the only way to recognise a statement whose card number is unreadable.
-  if (parsed.transactions.length > 0) {
+  if (automatic && parsed.transactions.length > 0) {
     const fingerprint = statementFingerprint(parsed.transactions);
     const same = existingStatements.find(
       (s) => s.period === period && s.fingerprint === fingerprint,
@@ -164,7 +183,9 @@ function resolveCardRef(
     return { kind: 'new', last4: null, suggestedNickname: 'New card' };
   }
 
-  const existing = existingCards.find((card) => card.last4 === last4);
+  const existing = automatic
+    ? existingCards.find((card) => card.last4 === last4)
+    : undefined;
   if (existing !== undefined) {
     return {
       kind: 'existing',
@@ -206,6 +227,7 @@ function planOneFile(
   existingCards: CardRecord[],
   existingStatements: StatementRecord[],
   newCardsByLast4: Map<string, CardRef>,
+  assignment: string | undefined,
 ): FileOutcome {
   const period = periodOf(parsed);
   if (period === null) {
@@ -223,6 +245,7 @@ function planOneFile(
     existingCards,
     existingStatements,
     newCardsByLast4,
+    assignment,
   );
 
   // A brand-new card can't already have a statement for this period —
@@ -277,6 +300,9 @@ export function planImport(
   parseResults: ParseResult[],
   existingCards: CardRecord[],
   existingStatements: StatementRecord[],
+  /** File name → the user's "Which card is this?" answer (card id or
+   * NEW_CARD); see review.ts cardQuestion. */
+  assignments: ReadonlyMap<string, string> = new Map(),
 ): FileOutcome[] {
   const newCardsByLast4 = new Map<string, CardRef>();
   const outcomes: FileOutcome[] = [];
@@ -292,6 +318,7 @@ export function planImport(
         existingCards,
         existingStatements,
         newCardsByLast4,
+        assignments.get(result.fileName),
       ),
     );
   }

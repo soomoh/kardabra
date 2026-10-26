@@ -262,3 +262,39 @@ test('a file dropped outside the drop zone is refused; inside, it highlights', a
   await zone.dispatchEvent('dragleave');
   await expect(zone).not.toHaveClass(/is-dragover/);
 });
+
+test('which card is this: an unreadable card number asks, and the answer applies', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('#statement-file-input').setInputFiles(fixture);
+  await page.getByRole('button', { name: 'Import 1 statement' }).click();
+  await expect(page.locator('.card-tile')).toHaveCount(1);
+
+  // legacy.xls carries no card number: with a card already here, ask.
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page
+    .locator('#statement-file-input')
+    .setInputFiles(
+      fileURLToPath(new URL('../fixtures/legacy.xls', import.meta.url)),
+    );
+  const which = page.getByLabel('Which card is this?');
+  await expect(which).toBeVisible();
+  await page.getByRole('button', { name: 'Import 1 statement' }).click();
+  await expect(page.getByRole('alert')).toContainText(
+    'Choose the card for one statement',
+  );
+  await expect(which).toBeFocused();
+
+  // The existing card already has October: the file becomes a duplicate.
+  await which.selectOption({ label: 'Card ····4321' });
+  await expect(page.getByText('Already imported — skipped')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+
+  // Changed to a new card: it needs its due day, then imports.
+  await which.selectOption({ label: 'A new card' });
+  await page.getByLabel('Due day of the month').fill('15');
+  await page.getByRole('button', { name: 'Import 1 statement' }).click();
+  await expect(page.locator('.card-tile')).toHaveCount(2);
+});

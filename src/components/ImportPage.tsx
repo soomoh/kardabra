@@ -5,6 +5,7 @@ import PasswordStep from './PasswordStep';
 import ImportReview from './ImportReview';
 import { useDataVersion } from '../context/DataVersionContext';
 import { getAllCards, getAllStatements } from '../db/db';
+import type { CardRecord } from '../db/schema';
 import { planImport, type ParseResult, type FileOutcome } from '../import/plan';
 import { commitImport, type CommitUserInput } from '../import/commit';
 import { importedNotice, withSuggestedNames } from '../import/review';
@@ -41,19 +42,19 @@ type ImportState =
       retry: boolean;
       unlocking: boolean;
     }
-  | {
-      stage: 'planned';
-      results: ParseResult[];
-      outcomes: FileOutcome[];
-      inputs: CommitUserInput;
-      commitError?: string;
-    }
-  | {
-      stage: 'committing';
-      results: ParseResult[];
-      outcomes: FileOutcome[];
-      inputs: CommitUserInput;
-    };
+  | ({ stage: 'planned'; commitError?: string } & Plan)
+  | ({ stage: 'committing' } & Plan);
+
+/** A planned batch and everything the review needs to show and change it. */
+interface Plan {
+  results: ParseResult[];
+  outcomes: FileOutcome[];
+  inputs: CommitUserInput;
+  /** The cards in the database when this plan was made (picker options). */
+  cards: CardRecord[];
+  /** File name → "Which card is this?" answer (card id or NEW_CARD). */
+  assignments: Map<string, string>;
+}
 
 function ImportPage({ setView }: ImportPageProps) {
   const db = useDb();
@@ -181,15 +182,29 @@ function ImportPage({ setView }: ImportPageProps) {
     // "planImport with fresh DB state" — read cards/statements right
     // before planning, not from some earlier snapshot, so duplicate
     // detection sees whatever's actually in the database now.
-    const existingCards = await getAllCards(db);
-    const existingStatements = await getAllStatements(db);
-    const outcomes = planImport(results, existingCards, existingStatements);
+    const assignments = new Map<string, string>();
     setState({
       stage: 'planned',
       results,
-      outcomes,
+      assignments,
+      ...(await planNow(results, assignments)),
       inputs: { nicknames: new Map(), dueDays: new Map(), passwordPatterns },
     });
+  }
+
+  /** Plan against what is in the database right now. */
+  async function planNow(
+    results: ParseResult[],
+    assignments: ReadonlyMap<string, string>,
+  ): Promise<{ outcomes: FileOutcome[]; cards: CardRecord[] }> {
+    const cards = await getAllCards(db);
+    const outcomes = planImport(
+      results,
+      cards,
+      await getAllStatements(db),
+      assignments,
+    );
+    return { outcomes, cards };
   }
 
   /** A failure mid-read must not leave the page stuck on "Reading…". */
@@ -222,15 +237,32 @@ function ImportPage({ setView }: ImportPageProps) {
       setState({ stage: 'idle' });
       return;
     }
-    const outcomes = planImport(
-      results,
-      await getAllCards(db),
-      await getAllStatements(db),
-    );
+    const assignments = new Map(state.assignments);
+    assignments.delete(fileName);
+    const planned = await planNow(results, assignments);
     // Functional update: answers typed while the database was read stay.
     setState((current) =>
       current.stage === 'planned'
-        ? { ...current, results, outcomes, commitError: undefined }
+        ? {
+            ...current,
+            ...planned,
+            results,
+            assignments,
+            commitError: undefined,
+          }
+        : current,
+    );
+  }
+
+  /** "Which card is this?" answered (or changed): plan again so the file
+   * joins that card — and becomes a duplicate if the card has the month. */
+  async function handleAssign(fileName: string, choice: string) {
+    if (state.stage !== 'planned') return;
+    const assignments = new Map(state.assignments).set(fileName, choice);
+    const planned = await planNow(state.results, assignments);
+    setState((current) =>
+      current.stage === 'planned'
+        ? { ...current, ...planned, assignments }
         : current,
     );
   }
@@ -255,12 +287,9 @@ function ImportPage({ setView }: ImportPageProps) {
     setState({ ...state, inputs: { ...state.inputs, dueDays } });
   }
 
-  async function handleCommit(
-    results: ParseResult[],
-    outcomes: FileOutcome[],
-    inputs: CommitUserInput,
-  ) {
-    setState({ stage: 'committing', results, outcomes, inputs });
+  async function handleCommit(plan: Plan) {
+    const { results, outcomes, inputs, assignments } = plan;
+    setState({ stage: 'committing', ...plan });
     try {
       const result = await commitImport(
         db,
@@ -276,21 +305,16 @@ function ImportPage({ setView }: ImportPageProps) {
       bump();
       // If even reading the database fails now, keep the old plan rather
       // than leaving the page stuck on "Importing…".
-      let replanned = outcomes;
+      let replanned = { outcomes, cards: plan.cards };
       try {
-        replanned = planImport(
-          results,
-          await getAllCards(db),
-          await getAllStatements(db),
-        );
+        replanned = await planNow(results, assignments);
       } catch {
         /* keep the previous plan; the error below says what happened */
       }
       setState({
         stage: 'planned',
-        results,
-        outcomes: replanned,
-        inputs,
+        ...plan,
+        ...replanned,
         commitError: describeDbError(error),
       });
     }
@@ -371,23 +395,26 @@ function ImportPage({ setView }: ImportPageProps) {
     );
   }
 
-  const { results, outcomes, inputs } = state;
+  const plan: Plan = state;
   return (
     <div>
       {title}
       <ImportReview
-        outcomes={outcomes}
-        inputs={inputs}
+        outcomes={state.outcomes}
+        inputs={state.inputs}
+        cards={state.cards}
+        assignments={state.assignments}
         committing={state.stage === 'committing'}
         commitError={state.stage === 'planned' ? state.commitError : undefined}
         diagnostics={diagnostics}
         onNickname={updateNickname}
         onDueDay={updateDueDay}
+        onAssign={(fileName, choice) =>
+          void handleAssign(fileName, choice).catch(reportError)
+        }
         onRemove={(fileName) => void handleRemove(fileName).catch(reportError)}
         onCancel={() => setState({ stage: 'idle' })}
-        onCommit={() =>
-          void handleCommit(results, outcomes, inputs).catch(reportError)
-        }
+        onCommit={() => void handleCommit(plan).catch(reportError)}
       />
     </div>
   );

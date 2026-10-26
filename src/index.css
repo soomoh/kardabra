@@ -678,8 +678,15 @@ h1[tabindex='-1']:focus {
 }
 .plan-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-xs);
+}
+.row-question {
+  flex-basis: 100%;
+}
+.row-question:not(.callout) select {
+  max-width: 24rem;
 }
 .plan-row-main {
   flex: 1;

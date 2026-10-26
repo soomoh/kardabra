@@ -4,9 +4,10 @@
  * offered for the unreadable-file report.
  */
 import { describe, expect, it } from 'vitest';
-import { planImport, type ParseResult } from '../../src/import/plan';
+import { NEW_CARD, planImport, type ParseResult } from '../../src/import/plan';
 import type { CommitUserInput } from '../../src/import/commit';
 import {
+  cardQuestions,
   importCount,
   importedNotice,
   planIsComplete,
@@ -198,5 +199,98 @@ describe('importedNotice', () => {
     expect(importedNotice(result(0, 0))).toBe(
       'Nothing new — those statements were already here.',
     );
+  });
+});
+
+describe('cardQuestions and card assignments', () => {
+  const cards = [
+    { id: 'c1', nickname: 'SBI one', last4: 'XX34' },
+    { id: 'c2', nickname: 'SBI two', last4: 'XX34' },
+    { id: 'c3', nickname: 'HDFC', last4: '1111' },
+  ];
+  const asCards = cards.map((c) => ({
+    ...c,
+    createdAt: '2025-01-01T00:00:00Z',
+  }));
+
+  it('asks for an unreadable card number, offering every card', () => {
+    const outcomes = planImport(
+      [file('x.csv', null, '2025-10-13')],
+      asCards,
+      [],
+    );
+    const q = cardQuestions(outcomes, cards, new Map());
+    expect(q.get('x.csv')?.map((o) => o.cardId)).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('asks when the last digits match more than one card, offering those', () => {
+    const outcomes = planImport(
+      [file('s.csv', 'XX34', '2025-10-13')],
+      asCards,
+      [],
+    );
+    const q = cardQuestions(outcomes, cards, new Map());
+    expect(q.get('s.csv')?.map((o) => o.cardId)).toEqual(['c1', 'c2']);
+  });
+
+  it('a single confident match asks nothing', () => {
+    const outcomes = planImport(
+      [file('h.csv', '1111', '2025-10-13')],
+      asCards,
+      [],
+    );
+    expect(cardQuestions(outcomes, cards, new Map()).size).toBe(0);
+  });
+
+  it('with no cards yet there is nothing to choose from', () => {
+    const outcomes = planImport([file('x.csv', null, '2025-10-13')], [], []);
+    expect(cardQuestions(outcomes, [], new Map()).size).toBe(0);
+  });
+
+  it('an answer moves the file onto that card', () => {
+    const outcomes = planImport(
+      [file('s.csv', 'XX34', '2025-10-13')],
+      asCards,
+      [],
+      new Map([['s.csv', 'c2']]),
+    );
+    const [o] = outcomes;
+    expect(o.kind === 'new-statement' && o.cardRef).toEqual({
+      kind: 'existing',
+      cardId: 'c2',
+      nickname: 'SBI two',
+    });
+    // Still asked, so the answer can be changed.
+    expect(
+      cardQuestions(outcomes, cards, new Map([['s.csv', 'c2']])).has('s.csv'),
+    ).toBe(true);
+  });
+
+  it('"a new card" overrides a last-digits match', () => {
+    const [o] = planImport(
+      [file('h.csv', '1111', '2025-10-13')],
+      asCards,
+      [],
+      new Map([['h.csv', NEW_CARD]]),
+    );
+    expect(o.kind === 'new-statement' && o.cardRef.kind).toBe('new');
+  });
+
+  it('assigning to a card that already has that month makes it a duplicate', () => {
+    const stored = {
+      id: 's1',
+      cardId: 'c3',
+      period: '2025-10',
+      fileName: 'old.csv',
+      txnCount: 5,
+      importedAt: '2025-10-20T00:00:00Z',
+    };
+    const [o] = planImport(
+      [file('x.csv', null, '2025-10-13')],
+      asCards,
+      [stored as never],
+      new Map([['x.csv', 'c3']]),
+    );
+    expect(o.kind).toBe('duplicate');
   });
 });

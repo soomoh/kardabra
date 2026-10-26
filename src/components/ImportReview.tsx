@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react';
-import type { FileOutcome } from '../import/plan';
+import { useId, useRef, useState } from 'react';
+import { NEW_CARD, type FileOutcome } from '../import/plan';
+import type { CardRecord } from '../db/schema';
 import type { CommitUserInput } from '../import/commit';
 import { buildFeedbackReport, feedbackEntriesFor } from '../import/feedback';
 import {
+  cardQuestions,
   importCount,
   outcomeFileName,
   planIsComplete,
@@ -17,6 +19,10 @@ import { XIcon } from './icons';
 interface ImportReviewProps {
   outcomes: FileOutcome[];
   inputs: CommitUserInput;
+  /** Existing cards, for "Which card is this?". */
+  cards: CardRecord[];
+  /** File name → chosen card id or NEW_CARD. */
+  assignments: ReadonlyMap<string, string>;
   committing: boolean;
   commitError?: string;
   /** Number-masked diagnostics of unreadable files, by file name. */
@@ -24,6 +30,7 @@ interface ImportReviewProps {
   onNickname: (key: string, value: string) => void;
   /** null when the box was emptied — "no answer yet", not day 0. */
   onDueDay: (key: string, value: number | null) => void;
+  onAssign: (fileName: string, choice: string) => void;
   onRemove: (fileName: string) => void;
   onCancel: () => void;
   onCommit: () => void;
@@ -39,11 +46,14 @@ const COLLAPSE_ABOVE = 8;
 function ImportReview({
   outcomes,
   inputs,
+  cards,
+  assignments,
   committing,
   commitError,
   diagnostics,
   onNickname,
   onDueDay,
+  onAssign,
   onRemove,
   onCancel,
   onCommit,
@@ -54,7 +64,11 @@ function ImportReview({
   const { groups, unreadable } = reviewGroups(outcomes);
   const feedbackEntries = feedbackEntriesFor(outcomes, diagnostics);
   const count = importCount(outcomes);
-  const complete = planIsComplete(outcomes, inputs);
+  const questions = cardQuestions(outcomes, cards, assignments);
+  const unansweredCards = [...questions.keys()].filter(
+    (fileName) => !assignments.has(fileName),
+  ).length;
+  const complete = planIsComplete(outcomes, inputs) && unansweredCards === 0;
   const statementRows = groups.reduce((n, g) => n + g.outcomes.length, 0);
 
   function handleImport() {
@@ -64,7 +78,7 @@ function ImportReview({
       setShowMissing(true);
       requestAnimationFrame(() =>
         listRef.current
-          ?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
           ?.focus(),
       );
       return;
@@ -84,13 +98,17 @@ function ImportReview({
     URL.revokeObjectURL(url);
   }
 
-  const missingCards = groups.filter((g) =>
-    g.outcomes.some(
-      (o) =>
-        o.kind === 'new-statement' &&
-        owners.dueDay.has(o.parsed.fileName) &&
-        !isValidDueDay(inputs.dueDays.get(g.key) ?? 0),
-    ),
+  // A due day is asked only once the file's card is known: choosing an
+  // existing card can make the question go away.
+  const missingCards = groups.filter(
+    (g) =>
+      !hasPendingCard(g, questions, assignments) &&
+      g.outcomes.some(
+        (o) =>
+          o.kind === 'new-statement' &&
+          owners.dueDay.has(o.parsed.fileName) &&
+          !isValidDueDay(inputs.dueDays.get(g.key) ?? 0),
+      ),
   ).length;
 
   return (
@@ -107,6 +125,9 @@ function ImportReview({
             inputs={inputs}
             owners={owners}
             showMissing={showMissing}
+            questions={questions}
+            assignments={assignments}
+            onAssign={onAssign}
             collapsed={statementRows > COLLAPSE_ABOVE}
             disabled={committing}
             onNickname={onNickname}
@@ -163,9 +184,7 @@ function ImportReview({
         )}
         {showMissing && !complete && (
           <p className="error-text" role="alert">
-            Add the due day for{' '}
-            {missingCards === 1 ? 'one card' : `${missingCards} cards`} to
-            import.
+            {missingText(unansweredCards, missingCards)}
           </p>
         )}
         <div className="review-buttons">
@@ -196,6 +215,9 @@ function CardGroup({
   inputs,
   owners,
   showMissing,
+  questions,
+  assignments,
+  onAssign,
   collapsed,
   disabled,
   onNickname,
@@ -206,6 +228,9 @@ function CardGroup({
   inputs: CommitUserInput;
   owners: ReturnType<typeof questionOwners>;
   showMissing: boolean;
+  questions: ReturnType<typeof cardQuestions>;
+  assignments: ReadonlyMap<string, string>;
+  onAssign: (fileName: string, choice: string) => void;
   collapsed: boolean;
   disabled: boolean;
   onNickname: (key: string, value: string) => void;
@@ -214,19 +239,28 @@ function CardGroup({
 }) {
   const { key, cardRef } = group;
   const first = group.outcomes[0];
-  const asksName = group.outcomes.some(
-    (o) => o.kind === 'new-statement' && owners.name.has(o.parsed.fileName),
-  );
-  const asksDueDay = group.outcomes.some(
-    (o) => o.kind === 'new-statement' && owners.dueDay.has(o.parsed.fileName),
-  );
+  // Name and due day wait until the card is known: picking an existing
+  // card makes both irrelevant.
+  const pendingCard = hasPendingCard(group, questions, assignments);
+  const asksName =
+    !pendingCard &&
+    group.outcomes.some(
+      (o) => o.kind === 'new-statement' && owners.name.has(o.parsed.fileName),
+    );
+  const asksDueDay =
+    !pendingCard &&
+    group.outcomes.some(
+      (o) => o.kind === 'new-statement' && owners.dueDay.has(o.parsed.fileName),
+    );
   const suggestion = suggestedName(first);
   const typedName = inputs.nicknames.get(key)?.trim();
-  const title =
-    cardRef.kind === 'existing'
+  const title = pendingCard
+    ? 'Which card?'
+    : cardRef.kind === 'existing'
       ? cardRef.nickname
       : typedName || suggestion || 'New card';
   const dueDay = inputs.dueDays.get(key);
+  const dueHintId = useId();
   const dueDayInvalid =
     (dueDay !== undefined && !isValidDueDay(dueDay)) ||
     (showMissing && dueDay === undefined);
@@ -237,11 +271,16 @@ function CardGroup({
       : `${group.toImport === 1 ? '1 statement' : `${group.toImport} statements`} to import`;
 
   return (
-    <details className="review-group" open={!collapsed || asksDueDay}>
+    <details
+      className="review-group"
+      open={!collapsed || asksDueDay || pendingCard}
+    >
       <summary>
         <span className="review-group-title">{title}</span>
         <span className="muted">
-          {cardRef.kind === 'new' ? 'New card · ' : ''}
+          {cardRef.kind === 'new' && !pendingCard && title !== 'New card'
+            ? 'New card · '
+            : ''}
           {summary}
         </span>
       </summary>
@@ -282,11 +321,11 @@ function CardGroup({
                 )
               }
               aria-invalid={dueDayInvalid}
-              aria-describedby={`due-hint-${key}`}
+              aria-describedby={dueHintId}
               disabled={disabled}
             />
             <span
-              id={`due-hint-${key}`}
+              id={dueHintId}
               className={dueDayInvalid ? 'field-hint error-text' : 'field-hint'}
             >
               {dueDay !== undefined && !isValidDueDay(dueDay)
@@ -327,12 +366,105 @@ function CardGroup({
                 disabled={disabled}
                 onRemove={onRemove}
               />
+              {questions.has(fileName) && (
+                <WhichCard
+                  fileName={fileName}
+                  last4={outcome.parsed.last4}
+                  options={questions.get(fileName)!}
+                  choice={assignments.get(fileName)}
+                  showMissing={showMissing}
+                  disabled={disabled}
+                  onAssign={onAssign}
+                />
+              )}
             </li>
           );
         })}
       </ul>
     </details>
   );
+}
+
+/** "Which card is this?" for one file. A callout until answered (it must
+ * be), then a plain field so the answer can still be changed. */
+function WhichCard({
+  fileName,
+  last4,
+  options,
+  choice,
+  showMissing,
+  disabled,
+  onAssign,
+}: {
+  fileName: string;
+  last4: string | null;
+  options: { cardId: string; nickname: string }[];
+  choice: string | undefined;
+  showMissing: boolean;
+  disabled: boolean;
+  onAssign: (fileName: string, choice: string) => void;
+}) {
+  const hintId = useId();
+  return (
+    <div
+      className={choice === undefined ? 'row-question callout' : 'row-question'}
+    >
+      <label className="field">
+        Which card is this?
+        <select
+          value={choice ?? ''}
+          onChange={(e) => onAssign(fileName, e.target.value)}
+          aria-invalid={showMissing && choice === undefined}
+          aria-describedby={hintId}
+          disabled={disabled}
+        >
+          <option value="" disabled>
+            Choose a card…
+          </option>
+          {options.map((o) => (
+            <option key={o.cardId} value={o.cardId}>
+              {o.nickname}
+            </option>
+          ))}
+          <option value={NEW_CARD}>A new card</option>
+        </select>
+        <span id={hintId} className="field-hint">
+          {last4 === null
+            ? 'This statement doesn’t show its card number.'
+            : `Its card number ends in ${last4.replace(/X/gi, '')}, like more than one of your cards.`}
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/** A file in this group still waits for "Which card is this?". */
+function hasPendingCard(
+  group: ReviewGroup,
+  questions: ReturnType<typeof cardQuestions>,
+  assignments: ReadonlyMap<string, string>,
+): boolean {
+  return group.outcomes.some((o) => {
+    const fileName = outcomeFileName(o);
+    return questions.has(fileName) && !assignments.has(fileName);
+  });
+}
+
+/** What's still needed before Import can run, in one sentence. */
+function missingText(cardsToChoose: number, dueDays: number): string {
+  const parts: string[] = [];
+  if (cardsToChoose > 0) {
+    parts.push(
+      `choose the card for ${cardsToChoose === 1 ? 'one statement' : `${cardsToChoose} statements`}`,
+    );
+  }
+  if (dueDays > 0) {
+    parts.push(
+      `add the due day for ${dueDays === 1 ? 'one card' : `${dueDays} cards`}`,
+    );
+  }
+  const sentence = parts.join(' and ');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)} to import.`;
 }
 
 /** Plain words for why a file won't be written (or will replace one). */
