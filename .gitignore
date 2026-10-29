@@ -27,6 +27,7 @@ AGENTS.md
 # Local scratch that may hold real data during debugging
 inbox/
 debug/
+probe-out.json
 
 # Statements are user financial data. Make committing one impossible by accident:
 # ignore every statement-shaped file, then re-allow ONLY the synthetic test
