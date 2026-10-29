@@ -370,6 +370,9 @@ test('Back, Forward and refresh keep the page; unknown routes show the dashboard
   await expect(page.locator('.notice')).toBeVisible();
   await page.locator('.card-tile').first().click();
   await expect(page).toHaveURL(/#\/card\/[\w-]+$/);
+  // The URL changes before the app handles its hashchange; going Back
+  // before then means the app never leaves the dashboard (flaky in CI).
+  await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
   const cardUrl = page.url();
 
   // Back returns to the dashboard, focus follows, the one-off import notice
