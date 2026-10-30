@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
 import {
@@ -218,11 +218,24 @@ function Headline({
       ))}
     </ul>
   );
+  const sub = (copy.lead !== null || copy.lines.length > 0) && (
+    <p className="hero-sub">
+      {copy.lead !== null && `${copy.lead}. `}
+      {copy.lines.map((line) => {
+        const date = formatDateLabel(line.dateISO, today);
+        return (
+          <Fragment key={line.prefix}>
+            {line.prefix} {line.strong ? <strong>{date}</strong> : date}.{' '}
+          </Fragment>
+        );
+      })}
+    </p>
+  );
   if (count === 0) {
     return (
       <header className="dashboard-header">
         <h1 className="hero-amount">All caught up</h1>
-        <p className="hero-sub">No unpaid bills on any card.</p>
+        {sub || <p className="hero-sub">No unpaid bills on any card.</p>}
         {notes}
       </header>
     );
@@ -250,15 +263,7 @@ function Headline({
           )}
         </span>
       </h1>
-      <p className="hero-sub">
-        {copy.lead !== null && `${copy.lead}. `}
-        {copy.dueISO !== null && (
-          <>
-            {copy.duePrefix}{' '}
-            <strong>{formatDateLabel(copy.dueISO, today)}</strong>.
-          </>
-        )}
-      </p>
+      {sub}
       {notes}
     </header>
   );

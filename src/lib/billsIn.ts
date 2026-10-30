@@ -1,23 +1,24 @@
 /**
- * "Are all the bills in?" — for paying a month's bills in one go without
- * letting any of them go overdue while waiting.
+ * "Are this month's bills in?" — one bill per card per calendar month, so
+ * a month's bills can be paid together from that month's income.
  *
- * Each card's usual statement day is learned from its history; its next
- * statement is expected around that day after its latest one. A card is
- * still to come when its bill isn't waiting to be paid and its next
- * statement should land before the last unpaid bill is due — it can still
- * join this batch. A card whose next statement lands after every unpaid
- * bill is due belongs to the next batch, so it isn't waited for.
+ * A card's bill is in for the month once a statement for that month
+ * (its `period`) is imported. Paying a bill never changes the count: a
+ * paid bill is still in. A card without this month's bill is still to
+ * come when its usual statement day says one is due this month (or one is
+ * late); a card that can't be predicted, or has gone a whole cycle without
+ * a statement (likely closed), isn't counted at all.
  *
- * Waiting must never make a bill overdue: any unpaid bill due on or before
- * a still-to-come statement's expected day is "pay now".
+ * The count is about arrivals; the earliest unpaid due date is reported
+ * alongside it on its own, so waiting for the rest of the month's bills
+ * can never hide a payment that falls due first.
  */
 
 import type { CardRecord, CycleRecord, StatementRecord } from '../db/schema';
 import { actionableCycle, cycleNeedsPayment } from './cycles';
 import {
   daysBetweenISO,
-  formatDateLabel,
+  monthName,
   nextDueDateWithGraceISO,
   ordinal,
 } from './dates';
@@ -34,6 +35,9 @@ const LATE_AFTER_DAYS = 3;
 const STALE_AFTER_DAYS = 31;
 /** Recent statements only: a bank can move a card's statement day. */
 const HISTORY = 6;
+/** Past due by more than this, the date is more likely stale data than a
+ * forgotten payment (same threshold as lib/dueStatus.ts). */
+const STALE_DUE_DAYS = 30;
 
 export interface AwaitedBill {
   card: CardRecord;
@@ -45,21 +49,25 @@ export interface AwaitedBill {
   late: boolean;
 }
 
-export interface PayNow {
-  card: CardRecord;
-  dueISO: string;
-}
-
 export interface BillsIn {
+  /** The calendar month counted, 'YYYY-MM' (today's). */
+  month: string;
+  /** Cards with a bill this month: in, or still to come. */
   cardCount: number;
-  /** Cards whose bill is waiting to be paid, or that aren't waited for. */
+  /** Cards whose statement for this month is imported, paid or not. */
   inCount: number;
+  /** Every bill that's in needs no payment (false when none is in). */
+  allInPaid: boolean;
   /** Still to come, earliest expected first. */
   awaited: AwaitedBill[];
-  /** Unpaid bills due before a still-to-come statement arrives. */
-  payNow: PayNow[];
-  /** Earliest due date among unpaid bills. */
+  /** When the next statement should arrive: the earliest still to come
+   * that isn't late, or, once all are in, the earliest of next month's. */
+  nextBillISO: string | null;
+  /** Earliest due date among unpaid bills, of any month, skipping any
+   * more than a cycle past (see earliestDue). */
   earliestDueISO: string | null;
+  /** Cards with an unpaid bill whose due date isn't known. */
+  undatedUnpaid: CardRecord[];
 }
 
 /** Median day of the month of the card's recent statement dates, or null
@@ -92,11 +100,14 @@ export function expectedNextStatementISO(
   return nextDueDateWithGraceISO(latest, usualDay, MIN_STATEMENT_GAP_DAYS);
 }
 
-/** ISO date `days` after `iso`. */
-function addDaysISO(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
+/** The due date to headline. A date more than a cycle past is likely
+ * stale data (lib/dueStatus.ts) and must not hide a payment due next
+ * week, so it's shown only when nothing more recent is unpaid. */
+function earliestDue(dueDates: string[], todayISO: string): string | null {
+  const recent = dueDates.filter(
+    (d) => daysBetweenISO(d, todayISO) <= STALE_DUE_DAYS,
+  );
+  return (recent.length > 0 ? recent : dueDates).sort()[0] ?? null;
 }
 
 export function billsIn(
@@ -105,126 +116,133 @@ export function billsIn(
   cycles: CycleRecord[],
   todayISO: string,
 ): BillsIn {
-  const unpaid: { card: CardRecord; cycle: CycleRecord }[] = [];
-  const others: CardRecord[] = [];
-  for (const card of cards) {
-    const cycle = actionableCycle(cycles.filter((c) => c.cardId === card.id));
-    if (cycle !== null && cycleNeedsPayment(cycle))
-      unpaid.push({ card, cycle });
-    else others.push(card);
-  }
-
-  const dueDates = unpaid
-    .map(({ cycle }) => cycle.dueDateISO)
-    .filter((d): d is string => d !== null)
-    .sort();
-  const lastDueISO = dueDates.at(-1) ?? null;
-
+  const month = todayISO.slice(0, 7);
+  let inCount = 0;
+  let allInPaid = true;
   const awaited: AwaitedBill[] = [];
-  for (const card of others) {
+  const upcoming: string[] = []; // next statements of cards already in
+  const dueDates: string[] = [];
+  const undated: CardRecord[] = [];
+
+  for (const card of cards) {
+    const ownCycles = cycles.filter((c) => c.cardId === card.id);
+    const actionable = actionableCycle(ownCycles);
+    if (actionable !== null && cycleNeedsPayment(actionable)) {
+      if (actionable.dueDateISO === null) undated.push(card);
+      else dueDates.push(actionable.dueDateISO);
+    }
+
     const own = statements.filter((s) => s.cardId === card.id);
     const expectedISO = expectedNextStatementISO(own);
+    if (own.some((s) => s.period === month)) {
+      inCount += 1;
+      // The actionable cycle, not this month's: a newer statement's bill
+      // is what's owed now. No cycle: status unknown, so not "paid".
+      if (actionable === null || cycleNeedsPayment(actionable))
+        allInPaid = false;
+      if (expectedISO !== null) upcoming.push(expectedISO);
+      continue;
+    }
+
     const usualDay = usualStatementDay(own);
-    // Can't tell when it comes: don't wait on it.
+    // Can't tell when it comes: don't count it.
     if (expectedISO === null || usualDay === null) continue;
     const daysLate = daysBetweenISO(expectedISO, todayISO);
     if (daysLate > STALE_AFTER_DAYS) continue;
-    const late = daysLate > LATE_AFTER_DAYS;
-    // A late statement is always worth naming; an on-time one only when it
-    // can still be paid with the bills already in.
-    if (late || (lastDueISO !== null && expectedISO <= lastDueISO)) {
-      awaited.push({ card, expectedISO, usualDay, late });
-    }
+    // Its next statement belongs to a later month: no bill this month.
+    if (expectedISO.slice(0, 7) > month) continue;
+    awaited.push({
+      card,
+      expectedISO,
+      usualDay,
+      late: daysLate > LATE_AFTER_DAYS,
+    });
   }
   awaited.sort((a, b) => a.expectedISO.localeCompare(b.expectedISO));
 
-  // The latest a still-to-come statement may arrive: its expected day plus
-  // the days it can run late (a late one: from today). Any unpaid bill due
-  // by then can't safely wait for it.
-  const waitUntilISO = awaited
-    .map((a) => addDaysISO(a.late ? todayISO : a.expectedISO, LATE_AFTER_DAYS))
-    .sort()
-    .at(-1);
-  const payNow: PayNow[] =
-    waitUntilISO === undefined
-      ? []
-      : unpaid
-          .filter(
-            ({ cycle }) =>
-              cycle.dueDateISO !== null && cycle.dueDateISO <= waitUntilISO,
-          )
-          .map(({ card, cycle }) => ({ card, dueISO: cycle.dueDateISO! }))
-          .sort((a, b) => a.dueISO.localeCompare(b.dueISO));
+  // A late statement's expected day is already past: the late note names
+  // it instead. Once all are in, the next bill is next month's first.
+  const nextBillISO =
+    awaited.length > 0
+      ? (awaited.find((a) => !a.late)?.expectedISO ?? null)
+      : (upcoming.sort()[0] ?? null);
 
   return {
-    cardCount: cards.length,
-    inCount: cards.length - awaited.length,
+    month,
+    cardCount: inCount + awaited.length,
+    inCount,
+    allInPaid: inCount > 0 && allInPaid,
     awaited,
-    payNow,
-    earliestDueISO: dueDates[0] ?? null,
+    nextBillISO,
+    earliestDueISO: earliestDue(dueDates, todayISO),
+    undatedUnpaid: undated,
   };
 }
 
-/** The headline's words: `lead` (how many bills are in, null for one card),
- * then the due-date sentence (`duePrefix` + `dueISO`, drawn emphasised), and
- * notes — what's still to come, what's late, what to pay now. */
+/** One sentence of the headline that carries a date: `prefix` + the date
+ * (drawn emphasised when `strong`) + a full stop. */
+export interface DatedLine {
+  prefix: string;
+  dateISO: string;
+  strong: boolean;
+}
+
+/** The headline's words: `lead` (how many of the month's bills are in,
+ * null for fewer than two cards), the dated lines (next bill expected,
+ * next payment due), and notes: unknown due dates, late statements. */
 export interface BillsInCopy {
   lead: string | null;
-  duePrefix: string;
-  dueISO: string | null;
+  lines: DatedLine[];
   notes: string[];
 }
 
-function names(cards: CardRecord[]): string {
-  const all = cards.map((c) => c.nickname);
-  return all.length <= 1
-    ? (all[0] ?? '')
-    : `${all.slice(0, -1).join(', ')} and ${all.at(-1)}`;
-}
-
 export function billsInCopy(result: BillsIn, todayISO: string): BillsInCopy {
-  const { cardCount, inCount, awaited, payNow, earliestDueISO } = result;
+  const { month, cardCount, inCount, allInPaid, awaited } = result;
+  const { nextBillISO, earliestDueISO } = result;
+  const allIn = awaited.length === 0;
+  const bills = `${monthName(month)} bills`;
   const lead =
     cardCount < 2
       ? null
-      : inCount === cardCount
-        ? `All ${cardCount} bills are in`
-        : `${inCount} of ${cardCount} bills are in`;
-  const duePrefix =
-    earliestDueISO !== null && earliestDueISO < todayISO
-      ? 'One was due'
-      : inCount === cardCount
-        ? 'Pay before' // before, not by: leaves a day's buffer
-        : 'First due';
+      : allIn
+        ? `All ${cardCount} ${bills} are ${allInPaid ? 'paid' : 'in'}`
+        : `${inCount} of ${cardCount} ${bills} are in${allInPaid ? ' and paid' : ''}`;
 
-  const notes: string[] = [];
-  const coming = awaited.filter((a) => !a.late);
-  if (coming.length > 0) {
-    notes.push(
-      `Still to come: ${coming
-        .map(
-          (a) =>
-            `${a.card.nickname} around ${formatDateLabel(a.expectedISO, todayISO)}`,
-        )
-        .join(', ')}.`,
-    );
+  const lines: DatedLine[] = [];
+  // With every bill in and one still to pay, the payment is the news; the
+  // next month's first statement can wait until this month is settled.
+  if (nextBillISO !== null && !(allIn && earliestDueISO !== null)) {
+    lines.push({
+      prefix: 'Next bill expected around',
+      dateISO: nextBillISO,
+      strong: false,
+    });
   }
-  for (const a of awaited.filter((a) => a.late)) {
-    notes.push(
-      `${a.card.nickname}'s statement usually comes by the ${ordinal(a.usualDay)} and isn't in yet.`,
-    );
+  if (earliestDueISO !== null) {
+    const pastDays = daysBetweenISO(earliestDueISO, todayISO);
+    lines.push({
+      prefix:
+        pastDays > STALE_DUE_DAYS
+          ? 'A payment was due'
+          : pastDays > 0
+            ? 'Payment overdue since'
+            : 'Next payment due',
+      dateISO: earliestDueISO,
+      strong: true,
+    });
   }
-  if (payNow.length > 0) {
-    const which = names(payNow.map((p) => p.card));
-    const before =
-      awaited.length === 1
-        ? `before ${awaited[0].card.nickname}'s statement arrives`
-        : 'before the rest arrive';
-    notes.push(
-      payNow.length === 1
-        ? `Pay ${which} now: it's due ${formatDateLabel(payNow[0].dueISO, todayISO)}, ${before}.`
-        : `Pay ${which} now: they're due ${before}.`,
-    );
-  }
-  return { lead, duePrefix, dueISO: earliestDueISO, notes };
+
+  const notes = [
+    // No date to headline: name it, or the payment would go unmentioned.
+    ...result.undatedUnpaid.map(
+      (card) => `${card.nickname}'s due date isn't known. Check its statement.`,
+    ),
+    ...awaited
+      .filter((a) => a.late)
+      .map(
+        (a) =>
+          `${a.card.nickname}'s bill usually comes by the ${ordinal(a.usualDay)} and isn't in yet.`,
+      ),
+  ];
+  return { lead, lines, notes };
 }

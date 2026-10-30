@@ -78,9 +78,9 @@ describe('usualStatementDay / expectedNextStatementISO', () => {
   });
 });
 
-describe('billsIn', () => {
+describe("billsIn: counts the calendar month's bills", () => {
   // Five cards with statement days 3, 10, 15, 18 and 25; today 16 Nov.
-  // A, B and C have this month's bill in, unpaid; D and E were paid last
+  // A, B and C have November's bill in, unpaid; D and E were paid last
   // month and their November statements are still to come.
   const cards = ['A', 'B', 'C', 'D', 'E'].map(card);
   const all = [
@@ -97,74 +97,180 @@ describe('billsIn', () => {
     cycle('D', '2025-10', '2025-11-07', true),
     cycle('E', '2025-10', '2025-11-14', true),
   ];
+  // D and E's November bills arrive.
+  const allIn = [
+    ...all,
+    ...statements('D', '2025-11-18'),
+    ...statements('E', '2025-11-20'),
+  ];
+  const allInCycles = (paid: string[]) =>
+    [
+      cycle('A', '2025-11', '2025-11-23'),
+      cycle('B', '2025-11', '2025-11-30'),
+      cycle('C', '2025-11', '2025-12-05'),
+      cycle('D', '2025-10', '2025-11-07', true),
+      cycle('E', '2025-10', '2025-11-14', true),
+      cycle('D', '2025-11', '2025-12-08'),
+      cycle('E', '2025-11', '2025-12-15'),
+    ].map((c) =>
+      c.period === '2025-11' && paid.includes(c.cardId)
+        ? { ...c, paidAt: '2025-11-21' }
+        : c,
+    );
 
-  it('names what is still to come, and the bill that cannot wait for it', () => {
+  it('names the next bill expected and the next payment due, separately', () => {
     const result = billsIn(cards, all, cycles, '2025-11-16');
-    expect(result.inCount).toBe(3);
+    expect(result).toMatchObject({
+      month: '2025-11',
+      cardCount: 5,
+      inCount: 3,
+      allInPaid: false,
+      nextBillISO: '2025-11-18',
+      earliestDueISO: '2025-11-23',
+    });
     expect(result.awaited.map((a) => [a.card.id, a.expectedISO])).toEqual([
       ['D', '2025-11-18'],
       ['E', '2025-11-25'],
     ]);
-    // A is due 23 Nov, before E (25 Nov) arrives: waiting would make it late.
-    expect(result.payNow.map((p) => [p.card.id, p.dueISO])).toEqual([
-      ['A', '2025-11-23'],
-    ]);
-    expect(result.earliestDueISO).toBe('2025-11-23');
-
     expect(billsInCopy(result, '2025-11-16')).toEqual({
-      lead: '3 of 5 bills are in',
-      duePrefix: 'First due',
-      dueISO: '2025-11-23',
-      notes: [
-        'Still to come: D around 18 Nov, E around 25 Nov.',
-        "Pay A now: it's due 23 Nov, before the rest arrive.",
+      lead: '3 of 5 November bills are in',
+      lines: [
+        {
+          prefix: 'Next bill expected around',
+          dateISO: '2025-11-18',
+          strong: false,
+        },
+        { prefix: 'Next payment due', dateISO: '2025-11-23', strong: true },
       ],
+      notes: [],
     });
   });
 
-  it('all in once every awaited statement has arrived', () => {
-    const later = [
-      ...all,
-      ...statements('D', '2025-11-18'),
-      ...statements('E', '2025-11-20'), // came early
-    ];
-    const result = billsIn(
-      cards,
-      later,
-      [
-        ...cycles,
-        cycle('D', '2025-11', '2025-12-08'),
-        cycle('E', '2025-11', '2025-12-15'),
-      ],
-      '2025-11-21',
-    );
-    expect(result.inCount).toBe(5);
-    expect(result.awaited).toEqual([]);
-    expect(result.payNow).toEqual([]);
-    expect(billsInCopy(result, '2025-11-21')).toMatchObject({
-      lead: 'All 5 bills are in',
-      duePrefix: 'Pay before',
-      dueISO: '2025-11-23',
-    });
-  });
-
-  it("doesn't wait for a card whose next statement comes after every bill is due", () => {
-    // Only A unpaid (due 23 Nov); B's next statement (10 Dec) is next batch.
-    const result = billsIn(
-      [card('A'), card('B')],
-      [...statements('A', '2025-11-03'), ...statements('B', '2025-11-10')],
-      [
-        cycle('A', '2025-11', '2025-11-23'),
-        cycle('B', '2025-11', '2025-11-30', true),
-      ],
+  it('a bill due before the rest of the month arrives still shows its due date', () => {
+    // A is due 23 Nov; E's bill only arrives around 25 Nov. Waiting for
+    // "all in" must not hide A's deadline.
+    const copy = billsInCopy(
+      billsIn(cards, all, cycles, '2025-11-16'),
       '2025-11-16',
     );
-    expect(result.awaited).toEqual([]);
-    expect(result.inCount).toBe(2);
-    expect(result.payNow).toEqual([]);
+    expect(copy.lines).toContainEqual({
+      prefix: 'Next payment due',
+      dateISO: '2025-11-23',
+      strong: true,
+    });
   });
 
-  it('calls out a late statement even with nothing to pay, without a pay-now', () => {
+  it("all in: the payment due is the news, not next month's bill", () => {
+    const copy = billsInCopy(
+      billsIn(cards, allIn, allInCycles([]), '2025-11-21'),
+      '2025-11-21',
+    );
+    expect(copy).toEqual({
+      lead: 'All 5 November bills are in',
+      lines: [
+        { prefix: 'Next payment due', dateISO: '2025-11-23', strong: true },
+      ],
+      notes: [],
+    });
+  });
+
+  it('paying a bill never lowers the count (regression)', () => {
+    // Paying A used to turn its next statement into one "to come", so
+    // "all 5 in" dropped to "4 of 5" with a list of bills to pay now.
+    const result = billsIn(cards, allIn, allInCycles(['A']), '2025-11-21');
+    expect(result.inCount).toBe(5);
+    expect(result.awaited).toEqual([]);
+    expect(billsInCopy(result, '2025-11-21')).toEqual({
+      lead: 'All 5 November bills are in',
+      lines: [
+        { prefix: 'Next payment due', dateISO: '2025-11-30', strong: true },
+      ],
+      notes: [],
+    });
+  });
+
+  it('all paid: says so, and when the next bill is expected', () => {
+    const result = billsIn(
+      cards,
+      allIn,
+      allInCycles(['A', 'B', 'C', 'D', 'E']),
+      '2025-11-22',
+    );
+    expect(result.earliestDueISO).toBeNull();
+    expect(billsInCopy(result, '2025-11-22')).toEqual({
+      lead: 'All 5 November bills are paid',
+      lines: [
+        {
+          prefix: 'Next bill expected around',
+          dateISO: '2025-12-03',
+          strong: false,
+        },
+      ],
+      notes: [],
+    });
+  });
+
+  it('some in, each of those paid', () => {
+    const paid = cycles.map((c) =>
+      c.period === '2025-11' ? { ...c, paidAt: '2025-11-16' } : c,
+    );
+    expect(
+      billsInCopy(billsIn(cards, all, paid, '2025-11-16'), '2025-11-16'),
+    ).toEqual({
+      lead: '3 of 5 November bills are in and paid',
+      lines: [
+        {
+          prefix: 'Next bill expected around',
+          dateISO: '2025-11-18',
+          strong: false,
+        },
+      ],
+      notes: [],
+    });
+  });
+
+  it("a new month starts from zero; last month's unpaid bill keeps its due date", () => {
+    // 2 Dec: no December statement yet; C's November bill is unpaid.
+    const result = billsIn(
+      cards,
+      allIn,
+      allInCycles(['A', 'B', 'D', 'E']),
+      '2025-12-02',
+    );
+    expect(result).toMatchObject({ inCount: 0, cardCount: 5 });
+    expect(billsInCopy(result, '2025-12-02')).toEqual({
+      lead: '0 of 5 December bills are in',
+      lines: [
+        {
+          prefix: 'Next bill expected around',
+          dateISO: '2025-12-03',
+          strong: false,
+        },
+        { prefix: 'Next payment due', dateISO: '2025-12-05', strong: true },
+      ],
+      notes: [],
+    });
+  });
+});
+
+describe('billsIn: which cards are counted', () => {
+  it("doesn't count a card whose next statement falls in a later month", () => {
+    // B's latest came on 31 Oct though it's usually the 1st: its next is
+    // 1 Dec, so it has no November bill.
+    const result = billsIn(
+      [card('A'), card('B')],
+      [
+        ...statements('A', '2025-11-03'),
+        ...statements('B', '2025-08-01', '2025-09-01', '2025-10-31'),
+      ],
+      [cycle('A', '2025-11', '2025-11-23')],
+      '2025-11-16',
+    );
+    expect(result).toMatchObject({ cardCount: 1, inCount: 1 });
+    expect(result.awaited).toEqual([]);
+  });
+
+  it('calls out a late statement, counted but not named as the next bill', () => {
     const result = billsIn(
       [card('Axis')],
       statements('Axis', '2025-09-18', '2025-10-18'),
@@ -172,20 +278,12 @@ describe('billsIn', () => {
       '2025-11-22',
     );
     expect(result.awaited).toMatchObject([{ late: true, usualDay: 18 }]);
-    expect(result.payNow).toEqual([]);
-    expect(billsInCopy(result, '2025-11-22').notes).toEqual([
-      "Axis's statement usually comes by the 18th and isn't in yet.",
-    ]);
-  });
-
-  it('stops naming a statement more than a cycle overdue (card likely dropped)', () => {
-    const result = billsIn(
-      [card('Axis')],
-      statements('Axis', '2025-10-18'),
-      [cycle('Axis', '2025-10', '2025-11-07', true)],
-      '2026-01-05',
-    );
-    expect(result.awaited).toEqual([]);
+    expect(result.nextBillISO).toBeNull();
+    expect(billsInCopy(result, '2025-11-22')).toEqual({
+      lead: null,
+      lines: [],
+      notes: ["Axis's bill usually comes by the 18th and isn't in yet."],
+    });
   });
 
   it('a just-expected statement is not late yet', () => {
@@ -195,72 +293,27 @@ describe('billsIn', () => {
       [cycle('Axis', '2025-10', '2025-11-07', true)],
       '2025-11-20',
     );
-    expect(result.awaited).toEqual([]);
+    expect(result.awaited).toMatchObject([{ late: false }]);
   });
 
-  it('one card: no count, and an overdue bill says so', () => {
+  it('stops counting a statement more than a cycle overdue (card likely dropped)', () => {
     const result = billsIn(
-      [card('A')],
-      statements('A', '2025-10-03'),
-      [cycle('A', '2025-10', '2025-10-23')],
-      '2025-10-30',
+      [card('Axis')],
+      statements('Axis', '2025-10-18'),
+      [cycle('Axis', '2025-10', '2025-11-07', true)],
+      '2026-01-05',
     );
-    expect(billsInCopy(result, '2025-10-30')).toEqual({
-      lead: null,
-      duePrefix: 'One was due',
-      dueISO: '2025-10-23',
-      notes: [],
-    });
-  });
-});
-
-describe('billsIn: waiting never makes a bill overdue', () => {
-  const two = [card('A'), card('B')];
-  const bPaid = cycle('B', '2026-10', '2026-10-25', true);
-
-  it('flags a bill due within the days a statement may run late', () => {
-    // B expected 5 Nov but may come up to 8 Nov; A due 6 Nov can't wait.
-    const result = billsIn(
-      two,
-      [
-        ...statements('A', '2026-10-15'),
-        ...statements('B', '2026-09-05', '2026-10-05'),
-      ],
-      [cycle('A', '2026-10', '2026-11-06'), bPaid],
-      '2026-11-01',
-    );
-    expect(result.awaited.map((a) => a.card.id)).toEqual(['B']);
-    expect(result.payNow.map((p) => p.card.id)).toEqual(['A']);
-    expect(billsInCopy(result, '2026-11-01').notes.at(-1)).toBe(
-      "Pay A now: it's due 6 Nov, before B's statement arrives.",
-    );
+    expect(result).toMatchObject({ cardCount: 0, awaited: [] });
   });
 
-  it('while a statement is late, flags bills due in the next few days', () => {
-    const result = billsIn(
-      two,
-      [
-        ...statements('A', '2026-10-07'),
-        ...statements('B', '2026-08-18', '2026-09-18'),
-      ],
-      [
-        cycle('A', '2026-10', '2026-10-27'),
-        cycle('B', '2026-09', '2026-10-08', true),
-      ],
-      '2026-10-26',
-    );
-    expect(result.awaited).toMatchObject([{ late: true }]);
-    expect(result.payNow.map((p) => p.dueISO)).toEqual(['2026-10-27']);
-  });
-
-  it("doesn't call a statement missing when the newest one is in but undated", () => {
+  it("an undated statement still counts as this month's bill", () => {
     const undatedOct = statements('B', '2026-10-18').map((s) => {
       const copy = { ...s };
       delete copy.statementDateISO;
       return copy;
     });
     const result = billsIn(
-      two,
+      [card('A'), card('B')],
       [
         ...statements('A', '2026-10-07'),
         ...statements('B', '2026-08-18', '2026-09-18'),
@@ -272,8 +325,94 @@ describe('billsIn: waiting never makes a bill overdue', () => {
       ],
       '2026-10-26',
     );
-    expect(result.awaited).toEqual([]);
-    expect(result.payNow).toEqual([]);
+    expect(result).toMatchObject({ cardCount: 2, inCount: 2, awaited: [] });
+  });
+});
+
+describe('billsInCopy: payment due wording', () => {
+  const one = (dueISO: string, todayISO: string) =>
+    billsInCopy(
+      billsIn(
+        [card('A')],
+        statements('A', '2025-10-03'),
+        [cycle('A', '2025-10', dueISO)],
+        todayISO,
+      ),
+      todayISO,
+    );
+
+  it('one card: no count; due today is still "next payment due"', () => {
+    expect(one('2025-10-23', '2025-10-23')).toEqual({
+      lead: null,
+      lines: [
+        { prefix: 'Next payment due', dateISO: '2025-10-23', strong: true },
+      ],
+      notes: [],
+    });
+  });
+
+  it('past due says overdue', () => {
+    expect(one('2025-10-23', '2025-10-30').lines).toEqual([
+      { prefix: 'Payment overdue since', dateISO: '2025-10-23', strong: true },
+    ]);
+  });
+
+  it('a stale due date never hides a payment due soon', () => {
+    // A's August bill was never followed by a newer statement; B is due
+    // 5 Nov. B's date is the one to headline.
+    const result = billsIn(
+      [card('A'), card('B')],
+      [...statements('A', '2025-07-25'), ...statements('B', '2025-10-16')],
+      [
+        cycle('A', '2025-07', '2025-08-15'),
+        cycle('B', '2025-10', '2025-11-05'),
+      ],
+      '2025-10-30',
+    );
+    expect(result.earliestDueISO).toBe('2025-11-05');
+    expect(billsInCopy(result, '2025-10-30').lines.at(-1)?.prefix).toBe(
+      'Next payment due',
+    );
+  });
+
+  it('an unpaid bill with no due date is named, not left out', () => {
+    const result = billsIn(
+      [card('A'), card('B')],
+      [...statements('A', '2025-10-03'), ...statements('B', '2025-10-16')],
+      [
+        { ...cycle('A', '2025-10', ''), dueDateISO: null },
+        cycle('B', '2025-10', '2025-11-05'),
+      ],
+      '2025-10-30',
+    );
+    expect(result.earliestDueISO).toBe('2025-11-05');
+    expect(billsInCopy(result, '2025-10-30').notes).toEqual([
+      "A's due date isn't known. Check its statement.",
+    ]);
+  });
+
+  it("'paid' follows the bill owed now, not an older one of the month", () => {
+    // B's October bill is paid but a newer, unpaid statement is in.
+    const result = billsIn(
+      [card('A'), card('B')],
+      [
+        ...statements('A', '2025-10-03'),
+        ...statements('B', '2025-10-05', '2025-11-04'),
+      ],
+      [
+        cycle('A', '2025-10', '2025-10-23', true),
+        cycle('B', '2025-10', '2025-10-25', true),
+        cycle('B', '2025-11', '2025-11-24'),
+      ],
+      '2025-10-30',
+    );
+    expect(result.allInPaid).toBe(false);
+  });
+
+  it('long past due reads as stale data, not a fresh alarm', () => {
+    expect(one('2025-10-23', '2025-11-30').lines.at(-1)?.prefix).toBe(
+      'A payment was due',
+    );
   });
 });
 

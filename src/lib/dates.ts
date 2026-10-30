@@ -171,6 +171,27 @@ const MONTH_ABBREVIATIONS = [
   'Dec',
 ];
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** 'YYYY-MM' → 'October', for prose about "this month's bills". */
+export function monthName(period: string): string {
+  const match = /^\d{4}-(\d{2})$/.exec(period);
+  return (match && MONTH_NAMES[Number(match[1]) - 1]) ?? period;
+}
+
 /** 'YYYY-MM' → 'Oct 2025'. */
 export function formatPeriodLabel(period: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(period);
