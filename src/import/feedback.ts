@@ -99,6 +99,8 @@ export function buildFeedbackReport(
 const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = [
   'savings-statement',
   'pdf-locked',
+  'too-large', // never read, so there is nothing to diagnose
+  'unreadable-workbook', // damaged or locked: a new parser rule can't help
 ];
 
 /** The plan's files Kardabra genuinely couldn't read, as report entries,

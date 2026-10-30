@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   candidatesFor,
+  MAX_FILE_BYTES,
   readStatementFiles,
   skippedLockedResults,
   unlockFiles,
@@ -58,6 +59,20 @@ describe('readStatementFiles', () => {
     expect(locked.map((f) => f.name)).toEqual(['pdf_statement_locked.pdf']);
     expect(results.map((r) => r.fileName)).toEqual(['hdfc_style.csv']);
     expect('parsed' in results[0]).toBe(true);
+  });
+
+  it('refuses a file over the size cap without parsing it', async () => {
+    const huge = {
+      name: 'huge.csv',
+      bytes: new Uint8Array(MAX_FILE_BYTES + 1),
+    };
+    const { results } = await readStatementFiles(
+      [huge, file('hdfc_style.csv')],
+      readPdf,
+    );
+    const [outcome, ok] = planImport(results, [], []);
+    expect(outcome).toMatchObject({ kind: 'rejected', errorKind: 'too-large' });
+    expect(ok.kind).toBe('new-statement'); // the rest of the batch goes on
   });
 
   it('contains a broken PDF to its own error result', async () => {

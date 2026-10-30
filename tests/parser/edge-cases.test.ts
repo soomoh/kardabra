@@ -78,4 +78,13 @@ describe('Excel container detection', () => {
   it('throws a typed error when handed bytes that are not an Excel file', () => {
     expect(() => loadExcelRows(new Uint8Array([1, 2, 3, 4]))).toThrow();
   });
+
+  // A damaged .xlsx (zip signature, junk after) must be a rejection with
+  // advice, not SheetJS's raw "Unsupported ZIP file" read as a bug.
+  it('a damaged workbook is an understood rejection', () => {
+    const damaged = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+    expect(() => loadExcelRows(damaged)).toThrow(
+      expect.objectContaining({ kind: 'unreadable-workbook' }),
+    );
+  });
 });

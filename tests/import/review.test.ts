@@ -108,6 +108,14 @@ it('reports unreadable files, not understood skips', () => {
         fileName: 'locked.pdf',
         error: new StatementError('pdf-locked', 'm', 'a'),
       },
+      {
+        fileName: 'huge.csv',
+        error: new StatementError('too-large', 'm', 'a'),
+      },
+      {
+        fileName: 'broken.xlsx',
+        error: new StatementError('unreadable-workbook', 'm', 'a'),
+      },
       { fileName: 'odd.csv', error: new StatementError('no-table', 'm', 'a') },
       { fileName: 'bug.csv', error: new Error('boom') },
     ],

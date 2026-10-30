@@ -67,15 +67,33 @@ export function loadExcelRows(bytes: Uint8Array): unknown[][] {
     throw new StatementError(
       'not-excel',
       'not an Excel file (no .xlsx or legacy .xls signature)',
-      're-download the statement, or export it as CSV instead',
+      'Re-download the statement, or export it as CSV instead.',
     );
   }
   // Both containers go through the same SheetJS entry point — it sniffs
   // the format internally too, this check exists only to fail fast with a
   // Kardabra-specific error (and error kind) instead of SheetJS's own.
-  const workbook = XLSX.read(bytes, { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[firstSheetName];
+  const unreadable = (message: string, advice: string) =>
+    new StatementError('unreadable-workbook', message, advice);
+  // A damaged file is the user's input, not a bug: SheetJS's own errors
+  // ("Unsupported ZIP file") become a rejection that says what to do.
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(bytes, { type: 'array' });
+  } catch {
+    // Banks do send password-protected .xlsx files, which fail here too.
+    throw unreadable(
+      "this Excel file couldn't be opened: it's damaged or password-protected",
+      'If it has a password, open it in Excel and save a copy without one, or export it as CSV. Otherwise, re-download the statement.',
+    );
+  }
+  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (worksheet === undefined) {
+    throw unreadable(
+      'this Excel file has no sheets',
+      'Re-download the statement, or export it as CSV instead.',
+    );
+  }
   return XLSX.utils.sheet_to_json(worksheet, {
     header: 1,
     raw: true,

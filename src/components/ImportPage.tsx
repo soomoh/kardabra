@@ -11,7 +11,9 @@ import { commitImport, type CommitUserInput } from '../import/commit';
 import { importedNotice, withSuggestedNames } from '../import/review';
 import {
   readStatementFiles,
+  MAX_FILE_BYTES,
   skippedLockedResults,
+  tooLargeResult,
   unlockFiles,
   type InputFile,
   type UnlockInput,
@@ -104,6 +106,11 @@ function ImportPage({ navigate }: ImportPageProps) {
     const inputs: InputFile[] = [];
     const unreadable: ParseResult[] = [];
     for (const file of Array.from(files)) {
+      // Checked on the size the browser reports, before reading anything.
+      if (file.size > MAX_FILE_BYTES) {
+        unreadable.push(tooLargeResult(file.name));
+        continue;
+      }
       try {
         inputs.push({
           name: file.name,

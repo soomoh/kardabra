@@ -31,6 +31,23 @@ import {
 import { fileDiagnostic } from './feedback';
 import type { ParseResult } from './plan';
 
+/** Statements are a few hundred kB, scanned PDFs a few MB. Anything far
+ * beyond is not a statement, and reading it could freeze the tab. */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/** A file over the cap, as a plan row that says why — built from its size
+ * alone, so the caller can refuse it before reading a byte. */
+export function tooLargeResult(fileName: string): ParseResult {
+  return {
+    fileName,
+    error: new StatementError(
+      'too-large',
+      `file is over ${MAX_FILE_BYTES / 1024 / 1024} MB`,
+      'This is too big to be a card statement. Check you picked the right file.',
+    ),
+  };
+}
+
 export type PdfReader = (
   bytes: Uint8Array,
   passwords: string[],
@@ -62,6 +79,10 @@ export async function readStatementFiles(
   const out: ReadResult = { results: [], locked: [], diagnostics: new Map() };
   for (const [index, file] of files.entries()) {
     if (index > 0) onProgress?.(index, files.length);
+    if (file.bytes.length > MAX_FILE_BYTES) {
+      out.results.push(tooLargeResult(file.name));
+      continue;
+    }
     if (looksLikePdf(file.bytes)) {
       try {
         const { pages } = await readPdf(file.bytes, []);
