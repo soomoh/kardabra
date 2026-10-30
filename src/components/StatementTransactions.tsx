@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useReportError } from '../db/DbProvider';
 import TotalsWarning from './TotalsWarning';
+import { useReturnFocus } from './useReturnFocus';
 import type {
   CycleRecord,
   StatementRecord,
   TransactionRecord,
 } from '../db/schema';
 import { formatSignedINR } from '../lib/money';
-import { identifyPaymentIndices, type PaymentMark } from '../lib/spend';
+import { detectPayment, type PaymentMark } from '../lib/spend';
 import { formatDateLabel, formatPeriodLabel } from '../lib/dates';
 
 /** "Which rows are checked" exists only while selecting. `checked` holds
@@ -26,7 +27,8 @@ interface StatementTransactionsProps {
 
 /**
  * One statement's transactions, with the identified bill payment labelled
- * and the "Choose bill payment" flow. The parent keys this by statement, so
+ * and, when Kardabra guessed it or the user chose it, the "Choose bill
+ * payment" flow. A payment the statement labels itself needs no checking. The parent keys this by statement, so
  * switching statements always drops a half-made selection rather than
  * applying it to the wrong one.
  */
@@ -43,10 +45,22 @@ function StatementTransactions({
   // The payment SET (lib/spend.ts) — possibly several rows, possibly none.
   // It drives both the "· bill payment" labels and the Fix flow's
   // pre-checked boxes, so the two always agree.
-  const paymentIndices = identifyPaymentIndices(transactions, {
+  const { indices: paymentIndices, source } = detectPayment(transactions, {
     priorExpectedDue,
     override: cycle?.paymentOverride,
   });
+  const guessed = source === 'amount' || source === 'largest';
+  const chosen = cycle?.paymentOverride;
+  // Says exactly what the user's pick amounts to now: a re-import can
+  // drop rows it named (matchOverride skips those).
+  const chosenText =
+    chosen === undefined
+      ? null
+      : chosen.length === 0
+        ? 'You said this statement has no bill payment.'
+        : paymentIndices.length < chosen.length
+          ? 'Some transactions you chose aren’t on this statement any more. Choose again, or reset to automatic.'
+          : 'You chose the bill payment for this statement.';
 
   function toggleChecked(index: number) {
     setFixMode((current) => {
@@ -72,40 +86,41 @@ function StatementTransactions({
 
   async function resetOverride() {
     await onSetPaymentOverride(undefined);
+    focusNext.current = 'after-reset';
     setFixMode({ mode: 'view' });
   }
 
   const selecting = fixMode.mode === 'selecting';
+  // Save and Cancel go away with the selection; focus returns here.
+  const chooseButton = useReturnFocus<HTMLButtonElement>(selecting);
+  const section = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Focus moves once the next state has rendered: into the list when
+  // choosing starts; after a reset, to Choose if Kardabra still guessed,
+  // else (the note is gone) to the heading.
+  const focusNext = useRef<'first-check' | 'after-reset' | null>(null);
+  useEffect(() => {
+    if (focusNext.current === 'first-check') {
+      section.current
+        ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        ?.focus();
+    } else if (focusNext.current === 'after-reset') {
+      (chooseButton.current ?? heading.current)?.focus();
+    }
+    focusNext.current = null;
+  }, [fixMode, source, chooseButton]);
   return (
-    <section>
+    <section ref={section}>
       <TotalsWarning
         summary={statement}
         transactions={transactions}
         skippedRows={statement.skippedRows ?? 0}
       />
       <div className="txn-header">
-        <h2>{formatPeriodLabel(statement.period)} transactions</h2>
-        {/* One button for the statement, not per row: a payment can be
-            several rows (a split payment). */}
-        {fixMode.mode === 'view' ? (
-          <div className="import-actions">
-            <button
-              onClick={() =>
-                setFixMode({
-                  mode: 'selecting',
-                  checked: new Set(paymentIndices),
-                })
-              }
-            >
-              Choose bill payment
-            </button>
-            {cycle?.paymentOverride !== undefined && (
-              <button onClick={() => void resetOverride().catch(reportError)}>
-                Reset to automatic
-              </button>
-            )}
-          </div>
-        ) : (
+        <h2 ref={heading} tabIndex={-1}>
+          {formatPeriodLabel(statement.period)} transactions
+        </h2>
+        {selecting && (
           <div className="import-actions">
             <button
               className="primary"
@@ -117,6 +132,44 @@ function StatementTransactions({
           </div>
         )}
       </div>
+      {/* One button for the statement, not per row: a payment can be
+          several rows (a split payment). */}
+      {selecting && (
+        <div className="payment-note">
+          <p>
+            Tick the transaction(s) that paid your bill, then Save. Leave them
+            all unticked if this statement has no bill payment.
+          </p>
+        </div>
+      )}
+      {!selecting && (guessed || chosenText !== null) && (
+        <div className="payment-note">
+          {/* A status, so a Save or Reset is announced when the text changes. */}
+          <p role="status">
+            {chosenText ??
+              'Kardabra guessed which transaction is your bill payment. You can choose the correct transaction(s) if we got it wrong.'}
+          </p>
+          <div className="import-actions">
+            <button
+              ref={chooseButton}
+              onClick={() => {
+                focusNext.current = 'first-check';
+                setFixMode({
+                  mode: 'selecting',
+                  checked: new Set(paymentIndices),
+                });
+              }}
+            >
+              Choose bill payment
+            </button>
+            {chosenText !== null && (
+              <button onClick={() => void resetOverride().catch(reportError)}>
+                Reset to automatic
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="table-scroll">
         <table className="txn-table" aria-label="Transactions">
           <thead>

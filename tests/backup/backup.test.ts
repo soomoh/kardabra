@@ -20,7 +20,7 @@ import {
   backupFileName,
   loadPassphrase,
   makeBackup,
-  passphraseForBackup,
+  rememberFirstPassphrase,
   readBackupFile,
   rememberPassphrase,
   restoreBackup,
@@ -201,31 +201,38 @@ describe('backup → restore', () => {
 });
 
 describe('the device passphrase', () => {
-  it('is made on the first backup, then reused', async () => {
+  it('keeps the first one offered, and only that one', async () => {
     expect(await loadPassphrase(db)).toBeNull();
-    const first = await passphraseForBackup(db);
-    expect(first.isNew).toBe(true);
-    const second = await passphraseForBackup(db);
-    expect(second).toEqual({ passphrase: first.passphrase, isNew: false });
-    expect(await loadPassphrase(db)).toBe(first.passphrase);
+    expect(await rememberFirstPassphrase(db, PASS)).toBe(PASS);
+    // A second tab offering another one gets the stored one back.
+    expect(
+      await rememberFirstPassphrase(db, 'brisk camel dense eagle fable'),
+    ).toBe(PASS);
+    expect(await loadPassphrase(db)).toBe(PASS);
+  });
+
+  it('replaces a stored one that no longer opens (its key erased)', async () => {
+    await rememberFirstPassphrase(db, 'brisk camel dense eagle fable');
+    await db.delete('keys', 'backup-passphrase');
+    expect(await rememberFirstPassphrase(db, PASS)).toBe(PASS);
+    expect(await loadPassphrase(db)).toBe(PASS);
   });
 
   it('is stored sealed, never as plain text', async () => {
-    const { passphrase } = await passphraseForBackup(db);
+    await rememberFirstPassphrase(db, PASS);
     const stored = await db.getAll('settings');
-    expect(JSON.stringify(stored)).not.toContain(passphrase);
-    expect(stored.some((s) => s.value === passphrase)).toBe(false);
+    expect(JSON.stringify(stored)).not.toContain('acorn');
+    expect(stored.some((s) => s.value === PASS)).toBe(false);
   });
 
   it('after a change, old files open only with the old one', async () => {
     await replaceStoredData(db, sampleData());
-    const { passphrase: old } = await passphraseForBackup(db);
+    const old = await rememberFirstPassphrase(db, PASS);
     const oldFile = await makeBackup(db, old, NOW);
     await rememberPassphrase(db, 'brisk camel dense eagle fable');
-    const { passphrase: next, isNew } = await passphraseForBackup(db);
-    expect(isNew).toBe(false);
+    const next = await loadPassphrase(db);
     expect(next).toBe('brisk camel dense eagle fable');
-    expect((await readBackupFile(fileOf(oldFile), next)).ok).toBe(false);
+    expect((await readBackupFile(fileOf(oldFile), next!)).ok).toBe(false);
     expect((await readBackupFile(fileOf(oldFile), old)).ok).toBe(true);
   });
 
@@ -249,9 +256,9 @@ describe('the device passphrase', () => {
   });
 
   it('survives "Forget saved passwords"', async () => {
-    const { passphrase } = await passphraseForBackup(db);
+    await rememberFirstPassphrase(db, PASS);
     await forgetSavedPasswords(db);
-    expect(await loadPassphrase(db)).toBe(passphrase);
+    expect(await loadPassphrase(db)).toBe(PASS);
   });
 });
 

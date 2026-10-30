@@ -125,22 +125,35 @@ export function paymentTolerance(owed: number): number {
   return Math.max(1, owed * 0.005);
 }
 
-/** The payment set as indices into `transactions` — the ladder in this
- * module's header, one branch per rung. An override that is an empty array
- * is the user saying "no payment here", distinct from no override. */
-export function identifyPaymentIndices(
+/** Which rung found the payment. 'labelled' (the statement says so) and
+ * 'none' (no credits) need no checking; 'amount' and 'largest' are
+ * Kardabra's guesses, which the UI offers to correct; 'chosen' is the
+ * user's own pick. */
+export type PaymentSource =
+  'chosen' | 'labelled' | 'amount' | 'largest' | 'none';
+
+/** The payment set as indices into `transactions`, and the rung that found
+ * it — the ladder in this module's header, one branch per rung. An
+ * override that is an empty array is the user saying "no payment here",
+ * distinct from no override. */
+export function detectPayment(
   transactions: { payee: string; amount: number }[],
   opts: { priorExpectedDue: number | null; override?: PaymentMark[] },
-): number[] {
+): { indices: number[]; source: PaymentSource } {
   if (opts.override !== undefined) {
-    return matchOverride(transactions, opts.override);
+    return {
+      indices: matchOverride(transactions, opts.override),
+      source: 'chosen',
+    };
   }
 
   const keywordIndices = transactions
     .map((txn, index) => ({ txn, index }))
     .filter(({ txn }) => txn.amount > 0 && hasPaymentKeyword(txn.payee))
     .map(({ index }) => index);
-  if (keywordIndices.length > 0) return keywordIndices;
+  if (keywordIndices.length > 0) {
+    return { indices: keywordIndices, source: 'labelled' };
+  }
 
   const priorExpectedDue = opts.priorExpectedDue;
   if (priorExpectedDue !== null) {
@@ -156,7 +169,7 @@ export function identifyPaymentIndices(
         bestDistance = distance;
       }
     });
-    if (bestIndex !== -1) return [bestIndex];
+    if (bestIndex !== -1) return { indices: [bestIndex], source: 'amount' };
   }
 
   let largestIndex = -1;
@@ -168,9 +181,19 @@ export function identifyPaymentIndices(
       largestAmount = txn.amount;
     }
   });
-  if (largestIndex !== -1) return [largestIndex];
+  if (largestIndex !== -1) {
+    return { indices: [largestIndex], source: 'largest' };
+  }
 
-  return [];
+  return { indices: [], source: 'none' };
+}
+
+/** detectPayment's indices alone, for spend. */
+export function identifyPaymentIndices(
+  transactions: { payee: string; amount: number }[],
+  opts: { priorExpectedDue: number | null; override?: PaymentMark[] },
+): number[] {
+  return detectPayment(transactions, opts).indices;
 }
 
 /** Net spend (positive): debits add, every credit outside the payment set

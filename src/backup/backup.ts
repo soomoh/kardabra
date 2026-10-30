@@ -2,8 +2,8 @@
  * Backup and restore, end to end: the device's one remembered passphrase,
  * making a backup file, opening one, and replacing everything with it.
  *
- * The passphrase is generated on the first backup and reused by every
- * later one (each file still gets a fresh salt and IV). It's kept on this
+ * The passphrase is generated for the first backup, shown and saved by the
+ * user before anything downloads, and reused by every later one (each file still gets a fresh salt and IV). It's kept on this
  * device sealed under its own non-extractable key — the same protection as
  * saved PDF passwords, separate from them so "Forget saved passwords"
  * doesn't touch it — and it's never inside a backup.
@@ -22,7 +22,7 @@ import {
 } from '../db/db';
 import { generateSecretKey, open, seal, type Sealed } from '../lib/secretBox';
 import { openBackup, parseEnvelope, sealBackup } from './envelope';
-import { generatePassphrase, normalizePassphrase } from './passphrase';
+import { normalizePassphrase } from './passphrase';
 import { parseBackupPayload, type BackupData } from './payload';
 
 const KEY_NAME = 'backup-passphrase';
@@ -72,28 +72,25 @@ export async function rememberPassphrase(
   await putSetting(db, SETTING_KEY, await sealPassphrase(db, shown));
 }
 
-/** The remembered passphrase, or a new one made and remembered now. Two
- * tabs making the first backup at once both end up with the one stored
- * first. */
-export async function passphraseForBackup(
+/** Keep `offered` (the passphrase the user was shown and saved) as this
+ * device's first one, and return the passphrase now stored. That is
+ * `offered`, unless another tab stored one first; then it's that one, and
+ * the user must be shown it before any backup uses it. */
+export async function rememberFirstPassphrase(
   db: IDBPDatabase<KardabraSchema>,
-): Promise<{ passphrase: string; isNew: boolean }> {
-  const existing = await loadPassphrase(db);
-  if (existing !== null) return { passphrase: existing, isNew: false };
-  const made = generatePassphrase();
+  offered: string,
+): Promise<string> {
   const stored = await putSettingIfAbsent(
     db,
     SETTING_KEY,
-    await sealPassphrase(db, made),
+    await sealPassphrase(db, offered),
   );
   const key = await getKey(db, KEY_NAME);
   const winner = isSealed(stored) && key ? await open(key, stored) : null;
-  if (winner !== null && winner !== made) {
-    return { passphrase: winner, isNew: false };
-  }
-  // A stored record that wouldn't open (key since erased) is replaced.
-  if (winner === null) await rememberPassphrase(db, made);
-  return { passphrase: made, isNew: true };
+  if (winner !== null) return winner;
+  // A stored record that wouldn't open (its key since erased) is replaced.
+  await rememberPassphrase(db, offered);
+  return normalizePassphrase(offered);
 }
 
 export function backupFileName(now = new Date()): string {

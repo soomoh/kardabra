@@ -26,7 +26,7 @@ function YourDataPage() {
   const [confirmingErase, setConfirmingErase] = useState(false);
   const [erasing, setErasing] = useState(false);
   const eraseButton = useReturnFocus<HTMLButtonElement>(confirmingErase);
-  const forgottenNote = useRef<HTMLParagraphElement>(null);
+  const forgottenNote = useRef<HTMLDivElement>(null);
   useDocumentTitle('Your data');
 
   useEffect(() => {
@@ -122,15 +122,21 @@ function YourDataPage() {
                 </button>
               </div>
             </>
-          ) : (
-            <p
+          ) : forgotten ? (
+            <div
               ref={forgottenNote}
-              tabIndex={forgotten ? -1 : undefined}
-              role={forgotten ? 'status' : undefined}
+              tabIndex={-1}
+              role="status"
+              className="notice inline-notice"
             >
-              {forgotten
-                ? 'Forgotten. The next locked statement will ask for its password.'
-                : 'None saved. When you unlock a statement, you can choose to remember its password on this device.'}
+              <p>
+                Forgotten. The next locked statement will ask for its password.
+              </p>
+            </div>
+          ) : (
+            <p>
+              None saved. When you unlock a statement, you can choose to
+              remember its password on this device.
             </p>
           )}
         </section>
@@ -143,7 +149,7 @@ function YourDataPage() {
           this device, forgets the backup passphrase, and resets the theme.
         </p>
         {confirmingErase ? (
-          <div className="delete-confirm">
+          <div className="delete-confirm callout">
             <p id="erase-warning">
               There is no undo. Importing the statement files again brings the
               statements back, but not what you changed: names, due days and

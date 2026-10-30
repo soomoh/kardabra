@@ -62,11 +62,44 @@ test('card page: statements, transactions, fix payment, rename, fee', async ({
   const rows = page.locator('.txn-table tbody tr');
   await expect(rows.first()).toBeVisible();
 
-  // Choose bill payment: checkboxes appear, Cancel removes them.
+  // This fixture doesn't label its payment, so Kardabra's guess is offered
+  // for checking. Checkboxes appear; Cancel removes them and returns focus.
+  await expect(
+    page.getByText(
+      /^Kardabra guessed which transaction is your bill payment\./,
+    ),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Choose bill payment' }).click();
-  await expect(page.getByRole('checkbox').first()).toBeVisible();
+  await expect(page.getByRole('checkbox').first()).toBeFocused();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Choose bill payment' }),
+  ).toBeFocused();
+  // Saving a pick says so and offers the way back to automatic.
+  await page.getByRole('button', { name: 'Choose bill payment' }).click();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(
+    page.getByText('You chose the bill payment for this statement.'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Choose bill payment' }),
+  ).toBeFocused();
+  await page.getByRole('button', { name: 'Reset to automatic' }).click();
+  await expect(page.getByText(/^Kardabra guessed/)).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Choose bill payment' }),
+  ).toBeFocused();
+  // Nothing ticked is an answer too: "no bill payment here".
+  await page.getByRole('button', { name: 'Choose bill payment' }).click();
+  for (const box of await page.getByRole('checkbox', { checked: true }).all()) {
+    await box.uncheck();
+  }
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(
+    page.getByText('You said this statement has no bill payment.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Reset to automatic' }).click();
 
   await page.getByRole('button', { name: 'Rename card' }).click();
   await page.getByLabel('Card nickname').fill('Travel card');

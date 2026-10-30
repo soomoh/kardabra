@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  detectPayment,
   identifyPaymentIndices,
   hasPaymentKeyword,
   netSpend,
@@ -358,5 +359,44 @@ describe('hasPaymentKeyword — whole-word "payment" and dash handling', () => {
     'PAYMENT GATEWAY CHARGE',
   ])('%s is not', (payee) => {
     expect(hasPaymentKeyword(payee)).toBe(false);
+  });
+});
+
+describe('detectPayment — which rung found it (drives "Kardabra guessed")', () => {
+  const debit = { payee: 'MERCHANT', amount: -1000 };
+  it.each([
+    [
+      'labelled',
+      [debit, { payee: 'PAYMENT RECEIVED', amount: 900 }],
+      900,
+      undefined,
+    ],
+    [
+      'amount',
+      [debit, { payee: 'TELE TRANSFER CREDIT', amount: 900 }],
+      900,
+      undefined,
+    ],
+    ['largest', [debit, { payee: 'NEFT CR', amount: 400 }], null, undefined],
+    ['none', [debit], 900, undefined],
+    ['chosen', [debit, { payee: 'PAYMENT RECEIVED', amount: 900 }], 900, []],
+    [
+      'chosen',
+      [debit, { payee: 'NEFT CR', amount: 400 }],
+      null,
+      [{ payee: 'NEFT CR', amount: 400 }],
+    ],
+  ] as const)('%s', (source, txns, prior, override) => {
+    const result = detectPayment([...txns], {
+      priorExpectedDue: prior,
+      override: override === undefined ? undefined : [...override],
+    });
+    expect(result.source).toBe(source);
+    expect(result.indices).toEqual(
+      identifyPaymentIndices([...txns], {
+        priorExpectedDue: prior,
+        override: override === undefined ? undefined : [...override],
+      }),
+    );
   });
 });

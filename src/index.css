@@ -989,12 +989,27 @@ h1[tabindex='-1']:focus {
 .delete-confirm p {
   margin: 0;
 }
-/* Backup news: what was downloaded and, the first time, the passphrase. */
-.backup-news {
-  margin-bottom: var(--space-md);
+/* Your data page: anything that appears after an action is framed, so it
+   reads as new, not as part of the page. Steps waiting on an answer are
+   callouts; results are notices (no dismiss: they go with the next action);
+   errors use the error frame. */
+.inline-notice {
+  margin: var(--space-sm) 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
 }
-.backup-news:focus {
+.data-page .callout,
+.data-page .error-banner {
+  margin: var(--space-sm) 0 var(--space-md);
+}
+/* Focused from script when they appear; the frame already marks them. */
+.inline-notice:focus,
+.data-page .error-banner:focus,
+.data-page .callout:focus {
   outline: none;
+}
+/* Callout text is bold for the question; the advice under it isn't. */
+.callout .callout-note {
+  font-weight: 400;
 }
 .passphrase-row {
   display: flex;
@@ -1006,6 +1021,11 @@ h1[tabindex='-1']:focus {
 .data-page .copy-status {
   flex-basis: 100%;
   margin: 0;
+}
+/* Waiting for news it stays in the row (so it's announced when it fills)
+   but takes no line of its own. */
+.data-page .copy-status:empty {
+  flex-basis: 0;
 }
 /* Big enough to copy by hand from a phone; one click selects all of it. */
 .data-page .passphrase {
@@ -1104,6 +1124,19 @@ h1[tabindex='-1']:focus {
 }
 .txn-header .import-actions {
   margin-top: 0;
+}
+/* Shown only when Kardabra guessed the bill payment (or the user chose
+   one): the check sits right under the heading, above the rows it's about. */
+.payment-note {
+  margin: var(--space-xs) 0 var(--space-md);
+}
+/* Focused from script after a reset; no ring, like page headings. */
+.txn-header h2[tabindex='-1']:focus {
+  outline: none;
+}
+.payment-note p {
+  max-width: 65ch;
+  margin: 0;
 }
 /* A table never widens the page: if it can't fit, it scrolls inside its
    own panel. */

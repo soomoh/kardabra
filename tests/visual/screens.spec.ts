@@ -137,6 +137,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await page.getByRole('button', { name: 'Download backup' }).click();
         await expect(page.locator('.passphrase')).toBeVisible();
         await shot(page, 'data-backup');
+        await page
+          .getByRole('button', { name: 'I’ve saved it, download backup' })
+          .click();
+        await expect(page.locator('.inline-notice')).toBeVisible();
+        await shot(page, 'data-backup-done');
         await page.getByRole('button', { name: 'Erase everything' }).click();
         await shot(page, 'data');
       });

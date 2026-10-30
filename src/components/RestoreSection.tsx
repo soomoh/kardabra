@@ -73,7 +73,7 @@ function RestoreSection({
   const [typed, setTyped] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const chooseButton = useRef<HTMLButtonElement>(null);
-  const doneNote = useRef<HTMLParagraphElement>(null);
+  const doneNote = useRef<HTMLDivElement>(null);
   // Where focus goes once the next step has rendered: the control that
   // had it (Cancel, Replace) is gone by then.
   const focusNext = useRef<'choose' | 'done' | null>(null);
@@ -210,7 +210,7 @@ function RestoreSection({
       )}
 
       {(step.kind === 'confirm' || step.kind === 'restoring') && (
-        <div className="delete-confirm">
+        <div className="delete-confirm callout">
           <p id="restore-warning">
             This backup from {madeOn(step.data.createdAt)} has{' '}
             {summary(backupCounts(step.data))}.{' '}
@@ -248,16 +248,23 @@ function RestoreSection({
       )}
 
       {step.kind === 'done' && (
-        <p ref={doneNote} tabIndex={-1} role="status">
-          Restored {summary(backupCounts(step.data))} from the backup of{' '}
-          {madeOn(step.data.createdAt)}.
-        </p>
+        <div
+          ref={doneNote}
+          tabIndex={-1}
+          role="status"
+          className="notice inline-notice"
+        >
+          <p>
+            Restored {summary(backupCounts(step.data))} from the backup of{' '}
+            {madeOn(step.data.createdAt)}.
+          </p>
+        </div>
       )}
 
       {problem && (
-        <p className="error-text" role="alert">
-          {problem}
-        </p>
+        <div className="error-banner" role="alert">
+          <p>{problem}</p>
+        </div>
       )}
 
       {(step.kind === 'idle' ||
