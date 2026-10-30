@@ -10,10 +10,15 @@ Kardabra is local-first by design:
 
 - Statements are parsed in your browser. Nothing is uploaded.
 - Everything is stored on your device in IndexedDB. There is no server, account, or telemetry involved.
+- In the published build, the page's Content Security Policy
+  (`connect-src 'none'`) has the browser refuse any connection the page
+  opens (fetch, XHR, WebSocket), not just trust the code not to.
 
-What Kardabra does **not** do yet: encrypt data at rest. Your data lives in your
-browser's IndexedDB in plaintext, so treat it like any other app's local data on
-a shared device.
+What Kardabra does **not** do yet: encrypt statement data at rest. It lives in
+your browser's IndexedDB in plaintext, so treat it like any other app's local
+data on a shared device. PDF passwords you choose to remember are encrypted
+with a key the browser won't export, so they never appear in a copy of the
+data. That doesn't hide them from someone using your browser.
 
 ## How to use
 
