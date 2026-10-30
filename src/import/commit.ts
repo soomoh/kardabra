@@ -16,8 +16,10 @@ import type {
   StatementRecord,
   TransactionRecord,
 } from '../db/schema';
+import type { Sealed } from '../lib/secretBox';
 import {
   putCard,
+  putPdfPassword,
   putStatementWithTransactions,
   upsertCycle,
   recomputeCardSpends,
@@ -48,6 +50,10 @@ export interface CommitUserInput {
   /** File name → the password pattern that unlocked it (import/read.ts);
    * remembered on the file's card. */
   passwordPatterns?: Map<string, string>;
+  /** File name → its password, encrypted (savedPasswords.ts). Present only
+   * for files whose password the user asked to remember; stored on the
+   * file's card, replacing any older one. */
+  sealedPasswords?: Map<string, Sealed>;
 }
 
 /** Drop keys whose value is undefined, so optional record fields are
@@ -167,6 +173,11 @@ export async function commitImport(
     return day;
   }
 
+  async function rememberPassword(fileName: string, cardId: string) {
+    const sealed = userInput.sealedPasswords?.get(fileName);
+    if (sealed !== undefined) await putPdfPassword(db, { cardId, ...sealed });
+  }
+
   async function resolveCard(
     cardRef: CardRef,
     fileName: string,
@@ -238,6 +249,10 @@ export async function commitImport(
 
     if (outcome.kind === 'duplicate' && !outcome.supersedes) {
       result.duplicatesSkipped++;
+      // Re-importing a month already stored still remembers its password.
+      if (outcome.cardRef.kind === 'existing') {
+        await rememberPassword(outcome.fileName, outcome.cardRef.cardId);
+      }
       // Refresh path: the *same* file re-dropped re-derives its cycle (due
       // date, totals) so improved derivation logic heals old data, without
       // rewriting transactions or losing paidAt (upsertCycle keeps it). A
@@ -281,6 +296,8 @@ export async function commitImport(
     const txnRecords = toTransactionRecords(statementId, card, parsed);
     await putStatementWithTransactions(db, statement, txnRecords);
     result.statementsWritten++;
+    // After the statement: a password is kept only for a file that landed.
+    await rememberPassword(parsed.fileName, card.id);
 
     await upsertCycle(db, buildCycleRecord(card, period, parsed, summary));
     affectedCardIds.add(card.id);

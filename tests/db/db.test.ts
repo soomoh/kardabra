@@ -24,6 +24,8 @@ import {
   getTransactionsForCard,
   getSetting,
   putSetting,
+  getAllPdfPasswords,
+  putPdfPassword,
 } from '../../src/db/db';
 import type {
   CardRecord,
@@ -68,10 +70,18 @@ function statement(overrides: Partial<StatementRecord> = {}): StatementRecord {
 }
 
 describe('openKardabraDb', () => {
-  it('creates all five stores with their indexes', async () => {
+  it('creates every store with its indexes', async () => {
     const db = await openKardabraDb();
     expect([...db.objectStoreNames].sort()).toEqual(
-      ['cards', 'cycles', 'settings', 'statements', 'transactions'].sort(),
+      [
+        'cards',
+        'cycles',
+        'keys',
+        'pdfPasswords',
+        'settings',
+        'statements',
+        'transactions',
+      ].sort(),
     );
 
     const tx = db.transaction(
@@ -160,6 +170,10 @@ describe('openKardabraDb', () => {
     expect(stmt?.fingerprint).toBe(statementFingerprint(legacyTxns));
     expect(stmt?.fileName).toBe('x.csv');
     expect((await getAllCards(db))[0].nickname).toBe('Old');
+    // Every later step runs too: v3's password stores exist, empty.
+    expect(db.objectStoreNames.contains('pdfPasswords')).toBe(true);
+    expect(db.objectStoreNames.contains('keys')).toBe(true);
+    expect(await getAllPdfPasswords(db)).toEqual([]);
     db.close();
   });
 
@@ -871,6 +885,11 @@ describe('deleteCardCascade', () => {
         dueDateISO: '2025-11-09',
         source: 'statement',
       });
+      await putPdfPassword(db, {
+        cardId: c.id,
+        iv: new Uint8Array(12),
+        data: new ArrayBuffer(16),
+      });
     }
 
     await deleteCardCascade(db, gone.id);
@@ -880,6 +899,10 @@ describe('deleteCardCascade', () => {
     expect(await getStatementsForCard(db, gone.id)).toEqual([]);
     expect(await getTransactionsForCard(db, gone.id)).toEqual([]);
     expect(await getActionableCycleByCard(db, gone.id)).toBeNull();
+    // A remembered password must not outlive its card.
+    expect((await getAllPdfPasswords(db)).map((r) => r.cardId)).toEqual([
+      keep.id,
+    ]);
 
     // ...and the other card's is untouched (the cascade must be scoped,
     // not a table wipe).

@@ -136,6 +136,19 @@ test('unlock a password-protected PDF with cardholder details, with no network',
   await expect(page.getByText('₹12,345.67').first()).toBeVisible();
   await expect(page.getByText('Card ····4242')).toBeVisible();
   expect(offsite).toEqual([]);
+
+  // "Remember" was left unticked, so the next import asks again.
+  await page.getByRole('link', { name: 'Import', exact: true }).click();
+  await page
+    .locator('#statement-file-input')
+    .setInputFiles(
+      fileURLToPath(
+        new URL('../fixtures/pdf_statement_locked.pdf', import.meta.url),
+      ),
+    );
+  await expect(
+    page.getByRole('heading', { name: 'Unlock your statements' }),
+  ).toBeVisible();
 });
 
 test('files still locked after name and date of birth ask for the password', async ({
@@ -162,6 +175,34 @@ test('files still locked after name and date of birth ask for the password', asy
   await page.getByRole('button', { name: 'Unlock' }).click();
 
   await expect(page.getByText('3 transactions')).toBeVisible();
+});
+
+test('a remembered password opens the next import without asking', async ({
+  page,
+}) => {
+  const locked = fileURLToPath(
+    new URL('../fixtures/pdf_statement_locked.pdf', import.meta.url),
+  );
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Import', exact: true }).click();
+  await page.locator('#statement-file-input').setInputFiles(locked);
+
+  const remember = page.getByLabel('Remember passwords on this device');
+  await expect(remember).not.toBeChecked(); // opt-in
+  await page.getByLabel('Name as on your card').fill('Jane Doe');
+  await page.getByLabel(/Date of birth/).fill('20/10/1990');
+  await remember.check();
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
+  await expect(page.locator('.card-grid')).toBeVisible();
+
+  // Next time (here the same file again), no password step.
+  await page.getByRole('link', { name: 'Import', exact: true }).click();
+  await page.locator('#statement-file-input').setInputFiles(locked);
+  await expect(
+    page.getByRole('heading', { name: 'Review and import' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Name as on your card')).toHaveCount(0);
 });
 
 test('passwords alone, without name or date of birth, each tried on every file', async ({

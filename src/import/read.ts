@@ -5,10 +5,10 @@
  * can ask for the cardholder's details ONCE for the whole batch, then
  * `unlockFiles` tries each bank's password patterns per file.
  *
- * Nothing typed here outlives the call: the details and passwords are used
- * and dropped. The only thing kept is a pattern id ('name4U+ddmm') for the
- * file that opened, which is not personal and lets the card try it first
- * next month.
+ * The details typed are used and dropped. What comes back per opened file
+ * is the pattern id ('name4U+ddmm', not personal, tried first next month)
+ * and the password itself, which the caller seals (savedPasswords.ts) when
+ * the user asked to remember it, or drops.
  *
  * The PDF opener is injected (`PdfReader`) so this runs in Node tests with
  * pdf.js's legacy build and in the browser with the bundled worker.
@@ -122,6 +122,8 @@ export interface UnlockResult {
   stillLocked: InputFile[];
   /** File name → the pattern id that opened it (never a typed password). */
   patterns: Map<string, string>;
+  /** File name → the password that opened it. Plaintext: seal or drop. */
+  passwords: Map<string, string>;
 }
 
 export async function unlockFiles(
@@ -135,6 +137,7 @@ export async function unlockFiles(
     results: [],
     stillLocked: [],
     patterns: new Map(),
+    passwords: new Map(),
   };
   for (const [index, file] of locked.entries()) {
     if (index > 0) onProgress?.(index, locked.length);
@@ -148,10 +151,13 @@ export async function unlockFiles(
         file.bytes,
         candidates.map((c) => c.password),
       );
-      const pattern =
-        unlockedWith === null ? undefined : candidates[unlockedWith].pattern;
-      if (pattern !== undefined && pattern !== 'typed') {
-        out.patterns.set(file.name, pattern);
+      const opened =
+        unlockedWith === null ? undefined : candidates[unlockedWith];
+      if (opened !== undefined) {
+        out.passwords.set(file.name, opened.password);
+        if (opened.pattern !== 'typed') {
+          out.patterns.set(file.name, opened.pattern);
+        }
       }
       out.results.push(parsePdf(file.name, pages));
     } catch (error) {

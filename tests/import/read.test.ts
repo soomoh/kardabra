@@ -83,10 +83,13 @@ describe('unlockFiles', () => {
     );
     expect(out.stillLocked).toEqual([]);
     expect(out.patterns.get('pdf_statement_locked.pdf')).toBe('name4U+ddmm');
+    expect(out.passwords.get('pdf_statement_locked.pdf')).toBe(
+      FIXTURE_PASSWORD,
+    );
     expect('parsed' in out.results[0]).toBe(true);
   });
 
-  it('opens with one of several typed passwords, never remembering it', async () => {
+  it('opens with one of several typed passwords, naming no pattern for it', async () => {
     // Passwords for other banks' files come first: each is tried on every file.
     const out = await unlockFiles(
       locked(),
@@ -96,6 +99,10 @@ describe('unlockFiles', () => {
     );
     expect(out.stillLocked).toEqual([]);
     expect(out.patterns.size).toBe(0);
+    // The one that opened it, for the caller to seal or drop.
+    expect([...out.passwords]).toEqual([
+      ['pdf_statement_locked.pdf', FIXTURE_PASSWORD],
+    ]);
   });
 
   it('leaves the file locked when nothing matches', async () => {
@@ -115,6 +122,7 @@ describe('unlockFiles', () => {
       'pdf_statement_locked.pdf',
     ]);
     expect(out.results).toEqual([]);
+    expect(out.passwords.size).toBe(0);
   });
 
   it('skipped files become an understood rejection, not a failure', () => {

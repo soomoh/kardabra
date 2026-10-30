@@ -150,6 +150,22 @@ export interface SettingRecord {
   value: unknown;
 }
 
+/** v3: a card's PDF password, remembered only when the user ticked
+ * "Remember" — AES-GCM ciphertext (lib/secretBox.ts), never plaintext.
+ * Its own store so the backup can leave it out by construction. */
+export interface PdfPasswordRecord {
+  cardId: string;
+  iv: Uint8Array<ArrayBuffer>;
+  data: ArrayBuffer;
+}
+
+/** v3: non-extractable WebCrypto keys, by name. Kept apart from `settings`
+ * because a CryptoKey can't be exported or serialised into a backup. */
+export interface KeyRecord {
+  name: string;
+  key: CryptoKey;
+}
+
 export interface KardabraSchema extends DBSchema {
   cards: {
     key: string; // CardRecord.id
@@ -179,5 +195,13 @@ export interface KardabraSchema extends DBSchema {
   settings: {
     key: string; // SettingRecord.key
     value: SettingRecord;
+  };
+  pdfPasswords: {
+    key: string; // PdfPasswordRecord.cardId
+    value: PdfPasswordRecord;
+  };
+  keys: {
+    key: string; // KeyRecord.name
+    value: KeyRecord;
   };
 }

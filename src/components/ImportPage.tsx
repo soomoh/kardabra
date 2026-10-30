@@ -17,6 +17,8 @@ import {
   type UnlockInput,
 } from '../import/read';
 import { readPdfInBrowser } from '../import/browserPdf';
+import { loadSavedPasswords, sealPasswords } from '../import/savedPasswords';
+import type { Sealed } from '../lib/secretBox';
 import type { View } from '../lib/route';
 import { useDocumentTitle } from './useDocumentTitle';
 
@@ -39,6 +41,8 @@ type ImportState =
       results: ParseResult[];
       locked: InputFile[];
       passwordPatterns: Map<string, string>;
+      /** Passwords the user asked to remember, already encrypted. */
+      sealedPasswords: Map<string, Sealed>;
       retry: boolean;
       unlocking: boolean;
     }
@@ -115,24 +119,40 @@ function ImportPage({ navigate }: ImportPageProps) {
       readPdfInBrowser,
       (done, total) => setProgress({ done, total }),
     );
-    setProgress(undefined);
     setDiagnostics(read.diagnostics);
     const results = [...unreadable, ...read.results];
-    if (read.locked.length > 0) {
+    // Remembered passwords first: only files none of them opens reach the
+    // password step.
+    let locked = read.locked;
+    const saved = locked.length > 0 ? await loadSavedPasswords(db) : [];
+    if (saved.length > 0) {
+      const unlocked = await unlockFiles(
+        locked,
+        { passwords: saved },
+        [],
+        readPdfInBrowser,
+        (done, total) => setProgress({ done, total }),
+      );
+      results.push(...unlocked.results);
+      locked = unlocked.stillLocked;
+    }
+    setProgress(undefined);
+    if (locked.length > 0) {
       setState({
         stage: 'locked',
         results,
-        locked: read.locked,
+        locked,
         passwordPatterns: new Map(),
+        sealedPasswords: new Map(),
         retry: false,
         unlocking: false,
       });
       return;
     }
-    await showPlan(results, new Map());
+    await showPlan(results, new Map(), new Map());
   }
 
-  async function handleUnlock(input: UnlockInput) {
+  async function handleUnlock(input: UnlockInput, remember: boolean) {
     if (state.stage !== 'locked') return;
     const locked = state;
     setState({ ...locked, unlocking: true });
@@ -147,24 +167,38 @@ function ImportPage({ navigate }: ImportPageProps) {
       readPdfInBrowser,
       (done, total) => setProgress({ done, total }),
     );
+    // Sealed straight away: the plaintext never reaches the page's state.
+    // Consent is per attempt: passwords sealed on an earlier try stay sealed
+    // even if the box is unticked on the retry. A failure here only loses
+    // the remembering, never the unlocked files.
+    let sealed = new Map<string, Sealed>();
+    if (remember) {
+      try {
+        sealed = await sealPasswords(db, unlocked.passwords);
+      } catch (error) {
+        reportError(error);
+      }
+    }
     setProgress(undefined);
     const results = [...locked.results, ...unlocked.results];
     const passwordPatterns = new Map([
       ...locked.passwordPatterns,
       ...unlocked.patterns,
     ]);
+    const sealedPasswords = new Map([...locked.sealedPasswords, ...sealed]);
     if (unlocked.stillLocked.length > 0) {
       setState({
         ...locked,
         results,
         locked: unlocked.stillLocked,
         passwordPatterns,
+        sealedPasswords,
         retry: true,
         unlocking: false,
       });
       return;
     }
-    await showPlan(results, passwordPatterns);
+    await showPlan(results, passwordPatterns, sealedPasswords);
   }
 
   async function handleSkipLocked() {
@@ -172,12 +206,14 @@ function ImportPage({ navigate }: ImportPageProps) {
     await showPlan(
       [...state.results, ...skippedLockedResults(state.locked)],
       state.passwordPatterns,
+      state.sealedPasswords,
     );
   }
 
   async function showPlan(
     results: ParseResult[],
     passwordPatterns: Map<string, string>,
+    sealedPasswords: Map<string, Sealed>,
   ) {
     // "planImport with fresh DB state" — read cards/statements right
     // before planning, not from some earlier snapshot, so duplicate
@@ -188,7 +224,12 @@ function ImportPage({ navigate }: ImportPageProps) {
       results,
       assignments,
       ...(await planNow(results, assignments)),
-      inputs: { nicknames: new Map(), dueDays: new Map(), passwordPatterns },
+      inputs: {
+        nicknames: new Map(),
+        dueDays: new Map(),
+        passwordPatterns,
+        sealedPasswords,
+      },
     });
   }
 
@@ -388,7 +429,9 @@ function ImportPage({ navigate }: ImportPageProps) {
           retry={state.retry}
           unlocking={state.unlocking}
           progress={progress}
-          onUnlock={(input) => void handleUnlock(input).catch(recover)}
+          onUnlock={(input, remember) =>
+            void handleUnlock(input, remember).catch(recover)
+          }
           onSkip={() => void handleSkipLocked().catch(recover)}
         />
       </div>

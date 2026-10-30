@@ -15,7 +15,9 @@ interface PasswordStepProps {
   unlocking: boolean;
   /** Files tried so far while unlocking. */
   progress?: { done: number; total: number };
-  onUnlock: (input: UnlockInput) => void;
+  /** `remember`: the user ticked "Remember", so passwords that work are
+   * saved (encrypted) on the files' cards. */
+  onUnlock: (input: UnlockInput, remember: boolean) => void;
   onSkip: () => void;
 }
 
@@ -27,8 +29,9 @@ interface PasswordStepProps {
  * file, so nobody has to match passwords to files.
  *
  * What's typed lives only in this component's state: kept across the retry
- * so nothing is typed twice, gone when the step closes, never stored or sent
- * anywhere.
+ * so nothing is typed twice, gone when the step closes, never sent anywhere.
+ * Only with "Remember" ticked (opt-in) is a password that worked kept, and
+ * then encrypted — never the name or date of birth.
  */
 function PasswordStep({
   fileNames,
@@ -43,6 +46,7 @@ function PasswordStep({
   const [last4Text, setLast4Text] = useState('');
   const [passwords, setPasswords] = useState<string[]>(['']);
   const [wantsPasswords, setWantsPasswords] = useState(false);
+  const [remember, setRemember] = useState(false);
   const last4Ref = useRef<HTMLInputElement>(null);
 
   // A retry reveals the last-4 field: move focus to it so the new question
@@ -66,16 +70,21 @@ function PasswordStep({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
-    onUnlock({
-      details: hasDetails
-        ? {
-            name,
-            dob,
-            last4s: last4Text.split(/[\s,]+/).filter((s) => /^\d{4}$/.test(s)),
-          }
-        : undefined,
-      passwords: typed,
-    });
+    onUnlock(
+      {
+        details: hasDetails
+          ? {
+              name,
+              dob,
+              last4s: last4Text
+                .split(/[\s,]+/)
+                .filter((s) => /^\d{4}$/.test(s)),
+            }
+          : undefined,
+        passwords: typed,
+      },
+      remember,
+    );
   }
 
   const count = fileNames.length;
@@ -84,8 +93,8 @@ function PasswordStep({
       <p className="lede">
         Banks lock statements with a password, usually made from your name and
         date of birth. Enter them once and we'll unlock{' '}
-        {count === 1 ? 'it' : `all ${count}`} for you. Nothing you type is
-        saved, and it never leaves this device.
+        {count === 1 ? 'it' : `all ${count}`} for you. Nothing you type leaves
+        this device.
       </p>
       <form className="password-form" onSubmit={submit}>
         <label>
@@ -169,6 +178,24 @@ function PasswordStep({
             Have the passwords? Enter them instead
           </button>
         )}
+        <div className="remember">
+          <input
+            id="remember-passwords"
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            aria-describedby="remember-hint"
+          />
+          <div>
+            <label htmlFor="remember-passwords">
+              Remember passwords on this device
+            </label>
+            <p id="remember-hint" className="field-hint">
+              Next time, they're tried before anything is asked. Your name and
+              date of birth aren't kept.
+            </p>
+          </div>
+        </div>
         <div className="import-actions">
           <button type="submit" className="primary" disabled={!canSubmit}>
             {!unlocking

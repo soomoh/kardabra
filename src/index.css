@@ -731,6 +731,22 @@ input[type='number']::-webkit-inner-spin-button {
 .password-form .link-button {
   align-self: flex-start;
 }
+/* The opt-in sits beside its text, not stacked like the fields above. */
+.password-form .remember {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+.password-form .remember input {
+  flex: none;
+  min-height: 0;
+}
+.password-form .remember label {
+  cursor: pointer;
+}
+.password-form .remember .field-hint {
+  margin: var(--space-2xs) 0 0;
+}
 
 /* Page headings take focus from script when a step changes; no ring. */
 h1[tabindex='-1']:focus {

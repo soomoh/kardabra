@@ -20,10 +20,11 @@ import type {
   StatementRecord,
   TransactionRecord,
   CycleRecord,
+  PdfPasswordRecord,
 } from './schema';
 
 const DB_NAME = 'kardabra';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /** What the app needs to hear about while the database is open. */
 export interface DbLifecycle {
@@ -100,6 +101,10 @@ export function openKardabraDb(
             });
           }
         }
+      }
+      if (oldVersion < 3) {
+        db.createObjectStore('pdfPasswords', { keyPath: 'cardId' });
+        db.createObjectStore('keys', { keyPath: 'name' });
       }
     },
     blocked() {
@@ -410,7 +415,7 @@ export async function deleteCardCascade(
   cardId: string,
 ): Promise<void> {
   const tx = db.transaction(
-    ['cards', 'statements', 'transactions', 'cycles'],
+    ['cards', 'statements', 'transactions', 'cycles', 'pdfPasswords'],
     'readwrite',
   );
 
@@ -439,6 +444,44 @@ export async function deleteCardCascade(
     await tx.objectStore('cycles').delete(key);
   }
 
+  await tx.objectStore('pdfPasswords').delete(cardId);
   await tx.objectStore('cards').delete(cardId);
   await tx.done;
+}
+
+/** Every remembered PDF password (still encrypted), one per card. */
+export async function getAllPdfPasswords(
+  db: IDBPDatabase<KardabraSchema>,
+): Promise<PdfPasswordRecord[]> {
+  return db.getAll('pdfPasswords');
+}
+
+export async function putPdfPassword(
+  db: IDBPDatabase<KardabraSchema>,
+  record: PdfPasswordRecord,
+): Promise<void> {
+  await db.put('pdfPasswords', record);
+}
+
+export async function getKey(
+  db: IDBPDatabase<KardabraSchema>,
+  name: string,
+): Promise<CryptoKey | undefined> {
+  return (await db.get('keys', name))?.key;
+}
+
+/** Store `candidate` under `name` unless a key is already there, and return
+ * whichever key is stored. Generating happens before this call (WebCrypto
+ * can't run inside an IndexedDB transaction), so two tabs racing both
+ * end up with the first key written, never two keys. */
+export async function putKeyIfAbsent(
+  db: IDBPDatabase<KardabraSchema>,
+  name: string,
+  candidate: CryptoKey,
+): Promise<CryptoKey> {
+  const tx = db.transaction('keys', 'readwrite');
+  const existing = await tx.store.get(name);
+  if (existing === undefined) await tx.store.put({ name, key: candidate });
+  await tx.done;
+  return existing?.key ?? candidate;
 }
