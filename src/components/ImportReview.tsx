@@ -383,13 +383,18 @@ function CardGroup({
       >
         <summary>{statements}</summary>
         <ul className="plan-list">
-          {group.outcomes.map((outcome) => {
+          {group.outcomes.map((outcome, index) => {
             const fileName = outcomeFileName(outcome);
+            // An export cut into months shows a row per month; the file's
+            // Remove and "Which card is this?" go on its first row only.
+            const firstOfFile = !group.outcomes
+              .slice(0, index)
+              .some((o) => outcomeFileName(o) === fileName);
             const { month, year } = periodAxisLabel(outcome.period);
             const due = outcome.parsed.summary.paymentDueDateISO;
             return (
               <li
-                key={fileName}
+                key={`${fileName}|${outcome.period}`}
                 className={
                   importCount([outcome]) === 0 ? 'plan-row skipped' : 'plan-row'
                 }
@@ -401,21 +406,33 @@ function CardGroup({
                   <div className="plan-row-details">
                     <span>{fileName}</span>
                     <span>
-                      {outcome.parsed.transactions.length} transactions
+                      {outcome.parsed.transactions.length}{' '}
+                      {outcome.parsed.transactions.length === 1
+                        ? 'transaction'
+                        : 'transactions'}
                     </span>
                     {due !== undefined && (
                       <span>due {formatDateLabel(due)}</span>
                     )}
-                    {outcome.kind === 'duplicate' &&
-                      outcome.overlaps === undefined && (
-                        <span className="badge">{duplicateLabel(outcome)}</span>
-                      )}
+                    {outcome.kind === 'duplicate' && (
+                      <span className="badge">{duplicateLabel(outcome)}</span>
+                    )}
                   </div>
-                  {/* A sentence, not a pill: it says where the rows are. */}
-                  {outcome.kind === 'duplicate' &&
-                    outcome.overlaps !== undefined && (
+                  {outcome.alreadyImported !== undefined &&
+                    (outcome.kind === 'new-statement' ||
+                      outcome.adds !== undefined) && (
                       <p className="plan-row-note">
-                        {overlapNote(outcome.overlaps)}
+                        {leftOutNote(outcome.alreadyImported)}
+                      </p>
+                    )}
+                  {outcome.kind === 'duplicate' &&
+                    outcome.notAdded !== undefined && (
+                      <p className="plan-row-note">
+                        {notAddedNote(
+                          outcome.notAdded,
+                          outcome.alreadyIn ??
+                            `your ${monthLabel(outcome.period)} statement (${outcome.previous?.fileName ?? ''})`,
+                        )}
                       </p>
                     )}
                   {outcome.trims !== undefined && (
@@ -432,12 +449,14 @@ function CardGroup({
                       </p>
                     )}
                 </div>
-                <RemoveButton
-                  fileName={fileName}
-                  disabled={disabled}
-                  onRemove={onRemove}
-                />
-                {questions.has(fileName) && (
+                {firstOfFile && (
+                  <RemoveButton
+                    fileName={fileName}
+                    disabled={disabled}
+                    onRemove={onRemove}
+                  />
+                )}
+                {firstOfFile && questions.has(fileName) && (
                   <WhichCard
                     fileName={fileName}
                     last4={outcome.parsed.last4}
@@ -539,10 +558,14 @@ function missingText(cardsToChoose: number, dueDays: number): string {
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)} to import.`;
 }
 
-/** Why an export that overlaps another file isn't added. It may hold
- * other months too, so it never claims every row is already here. */
-function overlapNote(overlaps: { period: string; fileName: string }): string {
-  return `This overlaps ${overlaps.fileName} (${monthLabel(overlaps.period)}), so it isn't added — nothing is counted twice. For other months, import their PDF statements.`;
+/** A piece of an export, some of whose rows are already stored. */
+function leftOutNote(count: number): string {
+  return `${count === 1 ? '1 transaction is' : `${count} transactions are`} already here, so ${count === 1 ? 'it was' : 'they were'} left out.`;
+}
+
+/** Export rows for a month whose statement doesn't hold them. */
+function notAddedNote(count: number, statement: string): string {
+  return `${count === 1 ? '1 transaction here isn’t' : `${count} transactions here aren’t`} in ${statement}, which covers this month, so ${count === 1 ? 'it wasn’t' : 'they weren’t'} added.`;
 }
 
 /** Exports that give this statement's rows up when it's imported. */
@@ -555,7 +578,7 @@ function trimsNote(trims: { period: string; fileName: string }[]): string {
 
 /** A statement replacing an export filed under the same month. */
 function droppedNote(fileName: string, dropped: number): string {
-  return `Replaces ${fileName}. ${dropped === 1 ? '1 of its transactions isn’t' : `${dropped} of its transactions aren’t`} in this statement and will be removed. To keep them, import the PDF statements for their months.`;
+  return `Replaces ${fileName}. ${dropped === 1 ? '1 of its transactions isn’t' : `${dropped} of its transactions aren’t`} in this statement and will be removed. If they belong to another month, that month’s statement brings them in.`;
 }
 
 function monthLabel(period: string): string {
@@ -567,6 +590,11 @@ function monthLabel(period: string): string {
 function duplicateLabel(
   outcome: Extract<FileOutcome, { kind: 'duplicate' }>,
 ): string {
+  if (outcome.alreadyIn !== undefined) return `Already in ${outcome.alreadyIn}`;
+  if (outcome.adds !== undefined) {
+    return `Adds ${outcome.adds} new ${outcome.adds === 1 ? 'transaction' : 'transactions'}`;
+  }
+  if (outcome.notAdded !== undefined) return 'This month’s statement is here';
   if (outcome.inBatch) return 'Same month as another file, so not added';
   if (outcome.supersedes) return 'Replaces the copy already here';
   return 'Already imported';

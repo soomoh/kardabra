@@ -615,7 +615,7 @@ test('which card is this: an unreadable card number asks, and the answer applies
   await expect(page.locator('.card-tile')).toHaveCount(2);
 });
 
-test("a CSV export of an imported statement's rows is not added twice", async ({
+test("a CSV export adds only what the statement doesn't already hold", async ({
   page,
 }) => {
   await page.goto('/');
@@ -628,12 +628,14 @@ test("a CSV export of an imported statement's rows is not added twice", async ({
   await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
   await expect(page.locator('.card-grid')).toBeVisible();
 
-  // The same three rows, worded the bank's CSV way, no card number.
+  // The statement's three rows, worded the bank's CSV way with no card
+  // number, plus one from the next cycle.
   const csv = [
     'Date,Description,Amount,Type',
     '20/09/2025,CAFE MOCHA REF1,1500,Dr',
     '22/09/2025,PAYMENT THANK YOU,5000,Cr',
     '25/09/2025,BOOK NOOK REF2,450.50,Dr',
+    '10/11/2025,GROCER REF3,800,Dr',
   ].join('\n');
   await page.getByRole('link', { name: 'Import', exact: true }).click();
   await page.locator('#statement-file-input').setInputFiles({
@@ -642,13 +644,9 @@ test("a CSV export of an imported statement's rows is not added twice", async ({
     buffer: Buffer.from(csv),
   });
   await page.getByLabel(/Which card/).selectOption({ index: 1 });
-  await expect(
-    page.getByText(
-      /This overlaps pdf_statement\.pdf \(Oct 2025\), so it isn't added/,
-    ),
-  ).toBeVisible();
-  // Nothing to import: the only action finishes without writing.
-  await expect(
-    page.getByRole('button', { name: /^Import \d+ statements?$/ }),
-  ).toHaveCount(0);
+  await expect(page.getByText('Already imported').first()).toBeVisible();
+  // An export prints no due date: asked once for the card.
+  await page.getByRole('spinbutton', { name: /Due day/ }).fill('9');
+  await page.getByRole('button', { name: 'Import 1 statement' }).click();
+  await expect(page.getByRole('status')).toContainText('Imported 1 statement');
 });
