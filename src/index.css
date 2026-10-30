@@ -601,9 +601,21 @@ input[type='number']::-webkit-inner-spin-button {
 /* Everything else on the tile sits above the open layer. */
 .card-tile .tile-actions,
 .card-tile .card-action,
+.card-tile .tile-link,
 .card-tile input {
   position: relative;
   z-index: 1;
+}
+/* An inline next step on a tile ("Import a newer statement"). */
+.tile-link {
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.tile-link:hover {
+  color: var(--primary-hover);
 }
 /* Says what the figure is; the figure stays the loudest thing. */
 .card-amount-label {

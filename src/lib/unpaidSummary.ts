@@ -1,8 +1,7 @@
 /**
- * The dashboard header's one-line total, extracted from Dashboard.tsx
- * into a pure function so the "which cycles count as unpaid, and when
- * may we print a sum" decisions are testable without a DOM (test the
- * seam, not the surface).
+ * The dashboard headline's unpaid totals, as a pure function so the "which
+ * cycles count as unpaid, and when may we print a sum" decisions are
+ * testable without a DOM (test the seam, not the surface).
  *
  * The entries passed in are one-per-card, each carrying that card's
  * *actionable* cycle only (lib/cycles.ts actionableCycle) — so settled-by-
@@ -13,7 +12,6 @@
 import type { CycleRecord } from '../db/schema';
 import type { CardWithCycle } from './sortCards';
 import { cycleNeedsPayment } from './cycles';
-import { formatINR } from './money';
 
 /** The unpaid bills across all cards, as numbers: what the dashboard's
  * headline is built from. `total` is null when some unpaid cycle has
@@ -42,22 +40,4 @@ export function unpaidTotals(entries: CardWithCycle[]): UnpaidTotals {
     total,
     isEstimate: unpaidCycles.some((cycle) => cycle.totalDue === undefined),
   };
-}
-
-/** 'X unpaid · ₹Y due' — the birds-eye total across all cards.
- *
- * Per-cycle amount: the bank's own totalDue when the statement carried
- * one, else the cycle's computed spend (a good stand-in for the bill
- * when the user pays in full — see CardTile's comment on when they can
- * diverge). When any card contributed a spend-substituted figure the
- * total is prefixed '~': an estimate presented as an estimate. Only a
- * cycle with NEITHER figure (rare: an old import from before spend was
- * recorded) suppresses the amount clause entirely — a partial sum
- * presented as "the total" is worse than no total at all, the same
- * sentinels-are-not-zero reasoning as CardTile's own "Amount unknown". */
-export function unpaidSummary(entries: CardWithCycle[]): string {
-  const { count, total, isEstimate } = unpaidTotals(entries);
-  if (count === 0) return 'All caught up';
-  if (total === null) return `${count} unpaid`;
-  return `${count} unpaid · ${isEstimate ? '~' : ''}${formatINR(total)} due`;
 }

@@ -196,6 +196,19 @@ function CardTile({
             )}
             {status.label}
           </span>
+          {status.stale && (
+            <>
+              {' '}
+              <a
+                className="tile-link"
+                href={routeHash({ name: 'import' })}
+                // Visible words first; the card tells several apart.
+                aria-label={`Import a newer statement, ${card.nickname}`}
+              >
+                Import a newer statement
+              </a>
+            </>
+          )}
         </p>
       )}
 

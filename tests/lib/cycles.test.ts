@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { actionableCycle, cycleNeedsPayment } from '../../src/lib/cycles';
-import { unpaidSummary, unpaidTotals } from '../../src/lib/unpaidSummary';
-import { formatINR } from '../../src/lib/money';
+import { unpaidTotals } from '../../src/lib/unpaidSummary';
 import type { CardRecord, CycleRecord } from '../../src/db/schema';
 
 function cycle(overrides: Partial<CycleRecord> = {}): CycleRecord {
@@ -67,7 +66,7 @@ describe('cycleNeedsPayment', () => {
   });
 });
 
-describe('unpaidSummary counts only actionable cycles', () => {
+describe('unpaidTotals counts only actionable cycles', () => {
   // Regression: with multiple historical statements imported for one
   // card, the dashboard total must reflect
   // only the latest statement's due — the bank's own total already
@@ -89,9 +88,11 @@ describe('unpaidSummary counts only actionable cycles', () => {
       cycle({ period: '2025-10', totalDue: 7162 }),
     ];
     const entries = [{ card, cycle: actionableCycle(history) }];
-    // Expected string built via formatINR rather than hardcoded — the ICU
-    // currency formatter's exact space characters vary (see money.test.ts).
-    expect(unpaidSummary(entries)).toBe(`1 unpaid · ${formatINR(7162)} due`);
+    expect(unpaidTotals(entries)).toEqual({
+      count: 1,
+      total: 7162,
+      isEstimate: false,
+    });
   });
 
   it('regression (user request): spend stands in for a missing totalDue, marked as an estimate', () => {
@@ -104,9 +105,11 @@ describe('unpaidSummary counts only actionable cycles', () => {
         cycle: cycle({ cardId: 'card-2', totalDue: 500 }),
       },
     ];
-    expect(unpaidSummary(entries)).toBe(
-      `2 unpaid · ~${formatINR(26620.93)} due`,
-    );
+    expect(unpaidTotals(entries)).toEqual({
+      count: 2,
+      total: 26620.93,
+      isEstimate: true,
+    });
   });
 
   it('all-bank-stated totals carry no estimate marker', () => {
@@ -117,7 +120,11 @@ describe('unpaidSummary counts only actionable cycles', () => {
         cycle: cycle({ cardId: 'card-2', totalDue: 500 }),
       },
     ];
-    expect(unpaidSummary(entries)).toBe(`2 unpaid · ${formatINR(7662)} due`);
+    expect(unpaidTotals(entries)).toEqual({
+      count: 2,
+      total: 7662,
+      isEstimate: false,
+    });
   });
 
   it('a cycle with neither totalDue nor spend still suppresses the sum (never a partial total)', () => {
@@ -128,7 +135,11 @@ describe('unpaidSummary counts only actionable cycles', () => {
         cycle: cycle({ cardId: 'card-2', totalDue: 500 }),
       },
     ];
-    expect(unpaidSummary(entries)).toBe('2 unpaid');
+    expect(unpaidTotals(entries)).toEqual({
+      count: 2,
+      total: null,
+      isEstimate: true,
+    });
   });
 });
 

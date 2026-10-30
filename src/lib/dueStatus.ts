@@ -13,6 +13,9 @@ export type DueTone = 'paid' | 'ok' | 'soon' | 'overdue' | 'unknown';
 export interface DueStatus {
   label: string;
   tone: DueTone;
+  /** The due date is more than 30 days gone: a newer statement is likely
+   * missing, so the tile offers Import beside the label. */
+  stale?: true;
 }
 
 /** The minimal slice of CycleRecord this function needs — a subset, not
@@ -58,8 +61,9 @@ export function dueStatus(todayISO: string, cycle: DueFacts): DueStatus {
   // history at once would otherwise read "Overdue by 67 days").
   if (daysUntilDue < -30) {
     return {
-      label: `Was due ${formatDateLabel(cycle.dueDateISO, todayISO)}. Import a newer statement to update.`,
+      label: `Was due ${formatDateLabel(cycle.dueDateISO, todayISO)}.`,
       tone: 'unknown',
+      stale: true,
     };
   }
   if (daysUntilDue < 0) {

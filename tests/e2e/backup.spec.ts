@@ -17,6 +17,9 @@ test('backup: download on one device, restore on another', async ({
   page,
   browser,
 }) => {
+  // Several 600k-round key derivations and four downloads: slower than the
+  // default 30 s when the whole suite runs at once.
+  test.setTimeout(90_000);
   await page.goto('/');
   await page.getByRole('link', { name: 'Import', exact: true }).click();
   await page.locator('#statement-file-input').setInputFiles(fixture);
@@ -127,6 +130,9 @@ test('backup: download on one device, restore on another', async ({
 
   await other.getByRole('link', { name: 'Dashboard', exact: true }).click();
   await expect(other.locator('.card-tile')).toHaveCount(1);
+  // The fixture's bill is long past: the tile says so and offers Import.
+  await other.getByRole('link', { name: /^Import a newer statement/ }).click();
+  await expect(other).toHaveURL(/#\/import$/);
   await phone.close();
 });
 
