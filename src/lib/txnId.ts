@@ -1,7 +1,7 @@
 /**
  * Stable, content-derived transaction ids, so the same purchase gets the same
  * id every time its statement is (re-)imported — on this device or another.
- * Exports (the hledger CSV) rely on this for de-duplication.
+ * The CSV export relies on this for de-duplication.
  *
  * Built from what the statement itself says: card key (last-4, or the card's
  * own id when no last-4 exists), date, amount, payee, plus an occurrence index
