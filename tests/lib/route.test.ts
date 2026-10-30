@@ -7,7 +7,7 @@ describe('parseRoute', () => {
     ['#', { name: 'dashboard' }],
     ['#/', { name: 'dashboard' }],
     ['#/import', { name: 'import' }],
-    ['#/privacy', { name: 'privacy' }],
+    ['#/data', { name: 'data' }],
     ['#/card/abc-123', { name: 'card', cardId: 'abc-123' }],
     ['#/card/a%2Fb', { name: 'card', cardId: 'a/b' }],
     // Unknown or malformed routes fall back to the dashboard, never throw.
@@ -26,7 +26,7 @@ describe('routeHash', () => {
     const views: View[] = [
       { name: 'dashboard' },
       { name: 'import' },
-      { name: 'privacy' },
+      { name: 'data' },
       { name: 'card', cardId: '4f1c/ä?#' },
     ];
     for (const view of views) expect(parseRoute(routeHash(view))).toEqual(view);

@@ -21,6 +21,7 @@ import type {
   TransactionRecord,
   CycleRecord,
   PdfPasswordRecord,
+  StoredData,
 } from './schema';
 
 const DB_NAME = 'kardabra';
@@ -356,6 +357,20 @@ export async function putSetting(
   await db.put('settings', { key, value });
 }
 
+/** Store `value` under `key` unless something is already there, and return
+ * whichever value is stored (same race rule as putKeyIfAbsent). */
+export async function putSettingIfAbsent(
+  db: IDBPDatabase<KardabraSchema>,
+  key: string,
+  value: unknown,
+): Promise<unknown> {
+  const tx = db.transaction('settings', 'readwrite');
+  const existing = await tx.store.get(key);
+  if (existing === undefined) await tx.store.put({ key, value });
+  await tx.done;
+  return existing === undefined ? value : existing.value;
+}
+
 /** Change a card's due day and re-project the due dates that came from it
  * (statements that printed none); printed dates stay. One transaction, so
  * the card and its bills never disagree. No-op for a missing card. */
@@ -552,7 +567,7 @@ export async function clearPdfPasswords(
   await tx.done;
 }
 
-/** How much the user has stored, for the privacy page. */
+/** How much the user has stored, for the Your data page. */
 export async function countStoredData(db: IDBPDatabase<KardabraSchema>) {
   const tx = db.transaction(
     ['cards', 'statements', 'transactions', 'pdfPasswords'],
@@ -578,4 +593,51 @@ export async function eraseAllData(
   const tx = db.transaction(names, 'readwrite');
   await Promise.all(names.map((name) => tx.objectStore(name).clear()));
   await tx.done;
+}
+
+/** The stores a backup carries, read in one transaction so the copy is
+ * consistent even while another tab imports. */
+const BACKED_UP = ['cards', 'statements', 'transactions', 'cycles'] as const;
+
+export async function getStoredData(
+  db: IDBPDatabase<KardabraSchema>,
+): Promise<StoredData> {
+  const tx = db.transaction(BACKED_UP, 'readonly');
+  const [cards, statements, transactions, cycles] = await Promise.all([
+    tx.objectStore('cards').getAll(),
+    tx.objectStore('statements').getAll(),
+    tx.objectStore('transactions').getAll(),
+    tx.objectStore('cycles').getAll(),
+  ]);
+  await tx.done;
+  return { cards, statements, transactions, cycles };
+}
+
+/** Replace every card, statement, transaction and bill with `data`, in one
+ * transaction: a failed restore leaves the old data as it was. Saved PDF
+ * passwords of cards that aren't in `data` go too; settings (theme, the
+ * backup passphrase) stay, being this device's own. */
+export async function replaceStoredData(
+  db: IDBPDatabase<KardabraSchema>,
+  data: StoredData,
+): Promise<void> {
+  const tx = db.transaction([...BACKED_UP, 'pdfPasswords'], 'readwrite');
+  const passwords = tx.objectStore('pdfPasswords');
+  const kept = new Set(data.cards.map((c) => c.id));
+  const orphaned = (await passwords.getAllKeys()).filter((id) => !kept.has(id));
+  const writes: Promise<unknown>[] = BACKED_UP.map((name) =>
+    tx.objectStore(name).clear(),
+  );
+  for (const cardId of orphaned) writes.push(passwords.delete(cardId));
+  for (const card of data.cards) writes.push(tx.objectStore('cards').put(card));
+  for (const s of data.statements) {
+    writes.push(tx.objectStore('statements').put(s));
+  }
+  for (const t of data.transactions) {
+    writes.push(tx.objectStore('transactions').put(t));
+  }
+  for (const c of data.cycles) writes.push(tx.objectStore('cycles').put(c));
+  // tx.done joins the same await: when a write fails, the transaction's
+  // abort must not surface later as an unhandled rejection.
+  await Promise.all([...writes, tx.done]);
 }

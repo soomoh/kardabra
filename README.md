@@ -20,6 +20,12 @@ data on a shared device. PDF passwords you choose to remember are encrypted
 with a key the browser won't export, so they never appear in a copy of the
 data. That doesn't hide them from someone using your browser.
 
+**Backups** (the Your data page) are one encrypted file: PBKDF2-SHA256 (600,000
+rounds) derives an AES-GCM key from a five-word passphrase the app generates.
+The file carries cards, statements, transactions and bills; never saved PDF
+passwords, keys or settings. Restoring one replaces everything on the device,
+which is also how you move Kardabra to another device.
+
 ## How to use
 
 Requires Node 22.13+ or 24+ (developed on Node 24).
@@ -88,6 +94,8 @@ page can export a diagnostic report to help.
   one focused function per query/write.
 - `src/import/` — the two-phase import: `planImport` decides what each file would
   do (pure), `commitImport` writes it.
+- `src/backup/` — encrypted backup files and the strict parser restore runs on
+  them.
 - `src/lib/` — domain logic (spend, billing cycles, due status, fees, trends).
 - `src/components/` — the React UI.
 

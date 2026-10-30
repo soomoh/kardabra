@@ -1,5 +1,5 @@
-/** Theme choice: the settings store holds it (backed up with the user's
- * data); localStorage mirrors it because index.html's pre-paint script
+/** Theme choice: the settings store holds it (per device: backups leave
+ * settings out); localStorage mirrors it because index.html's pre-paint script
  * can't wait for IndexedDB. Applying it (setting `data-theme`) is that
  * script's job alone — the app only announces changes to it. */
 export type ThemeChoice = 'system' | 'light' | 'dark';

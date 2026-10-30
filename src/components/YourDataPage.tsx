@@ -4,36 +4,30 @@ import { useDataVersion } from '../context/DataVersionContext';
 import { countStoredData, eraseAllData } from '../db/db';
 import { forgetSavedPasswords } from '../import/savedPasswords';
 import { forgetThemeMirror } from '../lib/theme';
-import { announceErased, startOver } from '../lib/erase';
+import { announceDataReplaced, startOver } from '../lib/erase';
+import { plural } from '../lib/plural';
+import BackupSection from './BackupSection';
+import RestoreSection from './RestoreSection';
 import { useDocumentTitle } from './useDocumentTitle';
 import { useReturnFocus } from './useReturnFocus';
 
 type Counts = Awaited<ReturnType<typeof countStoredData>>;
-/** `unsupported`: no StorageManager, or one without persist (older
- * browsers, some webviews) — the section is left out rather than guessed. */
-type Persistence = 'checking' | 'unsupported' | 'kept' | 'may-clear' | 'denied';
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n.toLocaleString()} ${n === 1 ? one : many}`;
-}
-
-/** What Kardabra keeps on this device, and the controls to keep it or
- * remove it. Backup and restore join this page next. */
-function PrivacyPage() {
+/** What Kardabra keeps on this device, and the controls to keep it, back
+ * it up, move it, or remove it. */
+function YourDataPage() {
   const db = useDb();
   const reportError = useReportError();
   const { version, bump } = useDataVersion();
   // 'error': the counts couldn't be read (reported in the banner); the page
   // still renders, so Erase stays reachable.
   const [counts, setCounts] = useState<Counts | 'error' | null>(null);
-  const [persistence, setPersistence] = useState<Persistence>('checking');
   const [forgotten, setForgotten] = useState(false);
   const [confirmingErase, setConfirmingErase] = useState(false);
   const [erasing, setErasing] = useState(false);
   const eraseButton = useReturnFocus<HTMLButtonElement>(confirmingErase);
   const forgottenNote = useRef<HTMLParagraphElement>(null);
-  const keptNote = useRef<HTMLParagraphElement>(null);
-  useDocumentTitle('Privacy');
+  useDocumentTitle('Your data');
 
   useEffect(() => {
     let cancelled = false;
@@ -49,28 +43,6 @@ function PrivacyPage() {
       cancelled = true;
     };
   }, [db, version, reportError]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!navigator.storage?.persisted || !navigator.storage.persist) {
-      setPersistence('unsupported');
-      return;
-    }
-    navigator.storage.persisted().then(
-      (kept) => !cancelled && setPersistence(kept ? 'kept' : 'may-clear'),
-      () => !cancelled && setPersistence('unsupported'),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function askToKeep() {
-    const kept = await navigator.storage.persist();
-    setPersistence(kept ? 'kept' : 'denied');
-    // The button goes away once the browser agrees; focus follows the news.
-    if (kept) setTimeout(() => keptNote.current?.focus());
-  }
 
   async function forgetPasswords() {
     await forgetSavedPasswords(db);
@@ -96,15 +68,15 @@ function PrivacyPage() {
       throw error;
     }
     forgetThemeMirror();
-    announceErased();
+    announceDataReplaced();
     // A fresh load drops everything still held in memory (screens, theme).
     startOver();
   }
 
   return (
-    <div className="privacy-page">
-      <h1>Privacy</h1>
-      <p className="privacy-lead">
+    <div className="data-page">
+      <h1>Your data</h1>
+      <p className="data-lead">
         Kardabra keeps everything in this browser, on this device. Nothing is
         uploaded: there’s no server, and the app blocks itself from connecting
         to the internet.
@@ -127,33 +99,8 @@ function PrivacyPage() {
         </p>
       </section>
 
-      {persistence !== 'checking' && persistence !== 'unsupported' && (
-        <section>
-          <h2>Keeping your data</h2>
-          {persistence === 'kept' ? (
-            <p ref={keptNote} tabIndex={-1}>
-              Your browser won’t clear this data on its own to free space.
-            </p>
-          ) : (
-            <>
-              <p>
-                Your browser may clear this data on its own when the device runs
-                low on space, or after weeks of not opening Kardabra.
-              </p>
-              {/* Always present, so the answer is announced when it lands. */}
-              <p role="status" className="muted">
-                {persistence === 'denied' &&
-                  'The browser didn’t agree this time. Browsers decide this themselves, often by how much you use a site.'}
-              </p>
-              <div className="import-actions">
-                <button onClick={() => void askToKeep().catch(reportError)}>
-                  Ask the browser to keep it
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      )}
+      <BackupSection hasData={loaded && loaded.cards + loaded.statements > 0} />
+      <RestoreSection current={loaded} />
 
       {loaded !== null && (
         <section>
@@ -193,7 +140,7 @@ function PrivacyPage() {
         <h2>Erase everything</h2>
         <p>
           Removes every card, statement, transaction and saved password from
-          this device, and resets the theme.
+          this device, forgets the backup passphrase, and resets the theme.
         </p>
         {confirmingErase ? (
           <div className="delete-confirm">
@@ -236,4 +183,4 @@ function PrivacyPage() {
   );
 }
 
-export default PrivacyPage;
+export default YourDataPage;

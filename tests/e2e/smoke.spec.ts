@@ -204,8 +204,8 @@ test('a remembered password opens the next import without asking', async ({
   ).toBeVisible();
   await expect(page.getByLabel('Name as on your card')).toHaveCount(0);
 
-  // Forgotten on the privacy page: the file asks again.
-  await page.getByRole('link', { name: 'Privacy', exact: true }).click();
+  // Forgotten on the Your data page: the file asks again.
+  await page.getByRole('link', { name: 'Your data', exact: true }).click();
   await expect(page.getByText(/^1 card has a saved password\./)).toBeVisible();
   await page.getByRole('button', { name: 'Forget saved passwords' }).click();
   const note = page.getByRole('status').filter({ hasText: /^Forgotten\./ });

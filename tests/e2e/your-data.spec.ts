@@ -1,5 +1,5 @@
 /**
- * Privacy page: what's stored is counted, and "Erase everything" leaves
+ * Your data page: what's stored is counted, and "Erase everything" leaves
  * nothing behind — no records in any store, no theme mirror, no theme
  * choice still applied.
  */
@@ -10,7 +10,7 @@ const fixture = fileURLToPath(
   new URL('../fixtures/hdfc_style.csv', import.meta.url),
 );
 
-test('privacy: counts what is stored, and erase everything empties it', async ({
+test('your data: counts what is stored, and erase everything empties it', async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: 'light' });
@@ -21,9 +21,11 @@ test('privacy: counts what is stored, and erase everything empties it', async ({
   await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
   await expect(page.locator('.card-grid')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Privacy', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Privacy' })).toBeVisible();
-  await expect(page).toHaveTitle('Privacy · Kardabra');
+  await page.getByRole('link', { name: 'Your data', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Your data', exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveTitle('Your data · Kardabra');
   await expect(
     page.getByText(/^1 card, 1 statement and \d+ transactions\.$/),
   ).toBeVisible();
@@ -72,7 +74,7 @@ test('privacy: counts what is stored, and erase everything empties it', async ({
   expect(leftovers).toBe(0);
 });
 
-test('privacy: erasing in one tab starts every other tab over', async ({
+test('your data: erasing in one tab starts every other tab over', async ({
   page,
   context,
 }) => {
@@ -84,7 +86,7 @@ test('privacy: erasing in one tab starts every other tab over', async ({
   await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
 
   const other = await context.newPage();
-  await other.goto('/#/privacy');
+  await other.goto('/#/data');
   await other.getByRole('button', { name: 'Erase everything' }).click();
   await other.getByRole('button', { name: 'Erase permanently' }).click();
   await expect(other.getByText('No cards yet')).toBeVisible();

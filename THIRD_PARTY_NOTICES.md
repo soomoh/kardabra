@@ -10,6 +10,16 @@ generator and bank detector in **burnrate**, re-expressed as data tables.
 - Version: commit `a6c9267e962c2f5c84ff9367ebdca30237860d74`
 - Licence: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
 
+## EFF short word list
+
+Backup passphrases are drawn from the EFF short word list #1
+(`src/backup/words.ts`, with its one hyphenated word removed), by the
+Electronic Frontier Foundation.
+
+- Source: https://www.eff.org/dice
+- Licence: Creative Commons Attribution 3.0 US —
+  https://creativecommons.org/licenses/by/3.0/us/
+
 ## Runtime dependencies
 
 Each is distributed under its own licence, included in its package:

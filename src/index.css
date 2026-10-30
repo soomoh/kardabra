@@ -975,19 +975,49 @@ h1[tabindex='-1']:focus {
   margin-top: var(--space-sm);
 }
 
-/* --- Privacy page: short sections of prose, kept to a readable measure. */
-.privacy-page p {
+/* --- Your data page: short sections of prose, kept to a readable measure. */
+.data-page p {
   max-width: 65ch;
 }
-.privacy-page section {
+.data-page section {
   margin-top: var(--space-xl);
 }
 /* An empty live region waits for news without taking up a line. */
-.privacy-page p:empty {
+.data-page p:empty {
   margin: 0;
 }
 .delete-confirm p {
   margin: 0;
+}
+/* Backup news: what was downloaded and, the first time, the passphrase. */
+.backup-news {
+  margin-bottom: var(--space-md);
+}
+.backup-news:focus {
+  outline: none;
+}
+.passphrase-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0;
+}
+.data-page .copy-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+/* Big enough to copy by hand from a phone; one click selects all of it. */
+.data-page .passphrase {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  word-spacing: 0.25em;
+  user-select: all;
 }
 .due-day-row {
   margin-top: var(--space-xs);

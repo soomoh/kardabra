@@ -131,9 +131,14 @@ for (const colorScheme of ['light', 'dark'] as const) {
         ).toBeVisible();
         await shot(page, 'card');
 
-        await page.getByRole('link', { name: 'Privacy', exact: true }).click();
+        await page
+          .getByRole('link', { name: 'Your data', exact: true })
+          .click();
+        await page.getByRole('button', { name: 'Download backup' }).click();
+        await expect(page.locator('.passphrase')).toBeVisible();
+        await shot(page, 'data-backup');
         await page.getByRole('button', { name: 'Erase everything' }).click();
-        await shot(page, 'privacy');
+        await shot(page, 'data');
       });
     });
   }

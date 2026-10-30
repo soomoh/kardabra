@@ -166,6 +166,15 @@ export interface KeyRecord {
   key: CryptoKey;
 }
 
+/** Everything a backup carries: the user's records, and nothing that
+ * belongs to this device alone (settings, saved passwords, keys). */
+export interface StoredData {
+  cards: CardRecord[];
+  statements: StatementRecord[];
+  transactions: TransactionRecord[];
+  cycles: CycleRecord[];
+}
+
 export interface KardabraSchema extends DBSchema {
   cards: {
     key: string; // CardRecord.id

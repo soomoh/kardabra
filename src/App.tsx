@@ -4,9 +4,9 @@ import { DbProvider } from './db/DbProvider';
 import Dashboard from './components/Dashboard';
 import ImportPage from './components/ImportPage';
 import CardDetail from './components/CardDetail';
-import PrivacyPage from './components/PrivacyPage';
+import YourDataPage from './components/YourDataPage';
 import { parseRoute, routeHash, type View } from './lib/route';
-import { followErasesElsewhere } from './lib/erase';
+import { followDataReplacedElsewhere } from './lib/erase';
 import {
   announceThemeChoice,
   readThemeMirror,
@@ -46,7 +46,7 @@ function App() {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  useEffect(followErasesElsewhere, []);
+  useEffect(followDataReplacedElsewhere, []);
 
   useEffect(() => {
     function onHashChange() {
@@ -131,10 +131,10 @@ function App() {
         Import
       </a>
       <a
-        href={routeHash({ name: 'privacy' })}
-        aria-current={view.name === 'privacy' ? 'page' : undefined}
+        href={routeHash({ name: 'data' })}
+        aria-current={view.name === 'data' ? 'page' : undefined}
       >
-        Privacy
+        Your data
       </a>
     </nav>
   );
@@ -155,7 +155,7 @@ function App() {
               <Dashboard navigate={navigate} notice={view.notice} />
             )}
             {view.name === 'import' && <ImportPage navigate={navigate} />}
-            {view.name === 'privacy' && <PrivacyPage />}
+            {view.name === 'data' && <YourDataPage />}
             {view.name === 'card' && (
               <CardDetail
                 key={view.cardId}
