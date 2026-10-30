@@ -907,6 +907,11 @@ h1[tabindex='-1']:focus {
   flex: 1;
   min-width: 0;
 }
+.plan-row-note {
+  margin: var(--space-2xs) 0 0;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
 .plan-row.skipped .plan-row-file {
   color: var(--ink-muted);
 }

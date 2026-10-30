@@ -19,6 +19,7 @@ import type {
 import type { Sealed } from '../lib/secretBox';
 import {
   putCard,
+  removeMatchingTransactions,
   putPdfPassword,
   putStatementWithTransactions,
   upsertCycle,
@@ -296,6 +297,12 @@ export async function commitImport(
     const txnRecords = toTransactionRecords(statementId, card, parsed);
     await putStatementWithTransactions(db, statement, txnRecords);
     result.statementsWritten++;
+    // Exports that also hold these rows (under another month) give them up,
+    // so nothing is counted twice; their other rows stay. After the write,
+    // so a failure can double count but never lose a row.
+    for (const trimmed of outcome.trims ?? []) {
+      await removeMatchingTransactions(db, trimmed.id, parsed.transactions);
+    }
     // After the statement: a password is kept only for a file that landed.
     await rememberPassword(parsed.fileName, card.id);
 

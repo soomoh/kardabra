@@ -197,6 +197,7 @@ describe('planImport — pure planning, no writes', () => {
       id: 's1',
       cardId: 'c1',
       period: '2025-10',
+      statementDateISO: '2025-10-13', // a statement, not an export
       fileName: 'old.csv',
       txnCount: 3,
       importedAt: '2025-10-15T00:00:00.000Z',

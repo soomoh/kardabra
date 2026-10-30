@@ -449,6 +449,59 @@ export async function deleteCardCascade(
   await tx.done;
 }
 
+/** Remove from a stored statement (an export) the transactions that match
+ * `rows` on date and amount — each row at most once — in one transaction.
+ * Its other rows stay; emptied, it goes with its month's cycle. Returns
+ * how many rows were removed. No-op if the statement is gone. */
+export async function removeMatchingTransactions(
+  db: IDBPDatabase<KardabraSchema>,
+  statementId: string,
+  rows: readonly { dateISO: string; amount: number }[],
+): Promise<number> {
+  const tx = db.transaction(
+    ['statements', 'transactions', 'cycles'],
+    'readwrite',
+  );
+  const statement = await tx.objectStore('statements').get(statementId);
+  if (statement === undefined) {
+    await tx.done;
+    return 0;
+  }
+  const wanted = new Map<string, number>();
+  for (const r of rows) {
+    const key = `${r.dateISO}|${r.amount}`;
+    wanted.set(key, (wanted.get(key) ?? 0) + 1);
+  }
+  const index = tx.objectStore('transactions').index('by-statement');
+  const kept: TransactionRecord[] = [];
+  let removed = 0;
+  let cursor = await index.openCursor(statementId);
+  while (cursor) {
+    const key = `${cursor.value.dateISO}|${cursor.value.amount}`;
+    const left = wanted.get(key) ?? 0;
+    if (left > 0) {
+      wanted.set(key, left - 1);
+      await cursor.delete();
+      removed++;
+    } else {
+      kept.push(cursor.value);
+    }
+    cursor = await cursor.continue();
+  }
+  if (kept.length === 0) {
+    await tx.objectStore('cycles').delete([statement.cardId, statement.period]);
+    await tx.objectStore('statements').delete(statementId);
+  } else if (removed > 0) {
+    await tx.objectStore('statements').put({
+      ...statement,
+      txnCount: kept.length,
+      fingerprint: statementFingerprint(kept),
+    });
+  }
+  await tx.done;
+  return removed;
+}
+
 /** Every remembered PDF password (still encrypted), one per card. */
 export async function getAllPdfPasswords(
   db: IDBPDatabase<KardabraSchema>,

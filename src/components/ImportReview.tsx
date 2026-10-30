@@ -406,10 +406,31 @@ function CardGroup({
                     {due !== undefined && (
                       <span>due {formatDateLabel(due)}</span>
                     )}
-                    {outcome.kind === 'duplicate' && (
-                      <span className="badge">{duplicateLabel(outcome)}</span>
-                    )}
+                    {outcome.kind === 'duplicate' &&
+                      outcome.overlaps === undefined && (
+                        <span className="badge">{duplicateLabel(outcome)}</span>
+                      )}
                   </div>
+                  {/* A sentence, not a pill: it says where the rows are. */}
+                  {outcome.kind === 'duplicate' &&
+                    outcome.overlaps !== undefined && (
+                      <p className="plan-row-note">
+                        {overlapNote(outcome.overlaps)}
+                      </p>
+                    )}
+                  {outcome.trims !== undefined && (
+                    <p className="plan-row-note">{trimsNote(outcome.trims)}</p>
+                  )}
+                  {outcome.kind === 'duplicate' &&
+                    outcome.exportRowsDropped !== undefined &&
+                    outcome.previous !== undefined && (
+                      <p className="plan-row-note">
+                        {droppedNote(
+                          outcome.previous.fileName,
+                          outcome.exportRowsDropped,
+                        )}
+                      </p>
+                    )}
                 </div>
                 <RemoveButton
                   fileName={fileName}
@@ -516,6 +537,30 @@ function missingText(cardsToChoose: number, dueDays: number): string {
   }
   const sentence = parts.join(' and ');
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)} to import.`;
+}
+
+/** Why an export that overlaps another file isn't added. It may hold
+ * other months too, so it never claims every row is already here. */
+function overlapNote(overlaps: { period: string; fileName: string }): string {
+  return `This overlaps ${overlaps.fileName} (${monthLabel(overlaps.period)}), so it isn't added — nothing is counted twice. For other months, import their PDF statements.`;
+}
+
+/** Exports that give this statement's rows up when it's imported. */
+function trimsNote(trims: { period: string; fileName: string }[]): string {
+  const names = trims
+    .map((t) => `${t.fileName} (${monthLabel(t.period)})`)
+    .join(', ');
+  return `Some of these transactions are also in ${names}. They'll be kept here only, so nothing is counted twice.`;
+}
+
+/** A statement replacing an export filed under the same month. */
+function droppedNote(fileName: string, dropped: number): string {
+  return `Replaces ${fileName}. ${dropped === 1 ? '1 of its transactions isn’t' : `${dropped} of its transactions aren’t`} in this statement and will be removed. To keep them, import the PDF statements for their months.`;
+}
+
+function monthLabel(period: string): string {
+  const { month, year } = periodAxisLabel(period);
+  return year === '' ? month : `${month} ${year}`;
 }
 
 /** Plain words for why a file won't be written (or will replace one). */

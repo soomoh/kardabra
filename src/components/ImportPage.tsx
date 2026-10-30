@@ -4,7 +4,7 @@ import { describeDbError, useDb, useReportError } from '../db/DbProvider';
 import PasswordStep from './PasswordStep';
 import ImportReview from './ImportReview';
 import { useDataVersion } from '../context/DataVersionContext';
-import { getAllCards, getAllStatements } from '../db/db';
+import { getAllCards, getAllStatements, getAllTransactions } from '../db/db';
 import type { CardRecord } from '../db/schema';
 import { planImport, type ParseResult, type FileOutcome } from '../import/plan';
 import { commitImport, type CommitUserInput } from '../import/commit';
@@ -251,6 +251,7 @@ function ImportPage({ navigate }: ImportPageProps) {
       cards,
       await getAllStatements(db),
       assignments,
+      await getAllTransactions(db),
     );
     return { outcomes, cards };
   }

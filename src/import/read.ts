@@ -97,7 +97,7 @@ export async function readStatementFiles(
       const parsed = parseStatementBytes(file.name, file.bytes);
       out.results.push({ fileName: file.name, parsed });
     } catch (error) {
-      out.results.push({ fileName: file.name, error });
+      out.results.push({ fileName: file.name, error: pdfFirst(error) });
       out.diagnostics.set(file.name, fileDiagnostic(file.bytes));
     }
   }
@@ -200,6 +200,20 @@ export function skippedLockedResults(locked: InputFile[]): ParseResult[] {
       'Skipped — this PDF is password-protected. Import it again any time with your details or its password.',
     ),
   }));
+}
+
+/** An unreadable spreadsheet's easiest fix is usually the PDF statement
+ * the bank already emails — the most consistent format, and one email
+ * inbox instead of a bank login per card. */
+function pdfFirst(error: unknown): unknown {
+  if (!(error instanceof StatementError) || error.kind !== 'no-table') {
+    return error;
+  }
+  return new StatementError(
+    error.kind,
+    error.message,
+    'If your bank emails you PDF statements, import the PDF instead. Otherwise, download this file from your bank again.',
+  );
 }
 
 function parsePdf(fileName: string, pages: PdfPage[]): ParseResult {
