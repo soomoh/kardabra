@@ -26,6 +26,9 @@ import {
   putSetting,
   getAllPdfPasswords,
   putPdfPassword,
+  putKeyIfAbsent,
+  countStoredData,
+  eraseAllData,
 } from '../../src/db/db';
 import type {
   CardRecord,
@@ -912,6 +915,67 @@ describe('deleteCardCascade', () => {
     expect((await getActionableCycleByCard(db, keep.id))?.period).toBe(
       '2025-10',
     );
+    db.close();
+  });
+});
+
+describe('countStoredData / eraseAllData', () => {
+  it('counts what is stored, then erase leaves every store empty', async () => {
+    const db = await openKardabraDb();
+    const c = card();
+    await putCard(db, c);
+    const s = statement({ cardId: c.id });
+    await putStatementWithTransactions(db, s, [
+      {
+        id: 't1',
+        statementId: s.id,
+        cardId: c.id,
+        dateISO: '2025-10-01',
+        payee: 'A',
+        amount: -100,
+      },
+      {
+        id: 't2',
+        statementId: s.id,
+        cardId: c.id,
+        dateISO: '2025-10-02',
+        payee: 'B',
+        amount: -50,
+      },
+    ]);
+    await upsertCycle(db, {
+      cardId: c.id,
+      period: '2025-10',
+      dueDateISO: null,
+      source: 'statement',
+    });
+    await putSetting(db, 'theme', 'dark');
+    await putPdfPassword(db, {
+      cardId: c.id,
+      iv: new Uint8Array(12),
+      data: new ArrayBuffer(16),
+    });
+    await putKeyIfAbsent(
+      db,
+      'pdf-passwords',
+      await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+        'encrypt',
+      ]),
+    );
+
+    expect(await countStoredData(db)).toEqual({
+      cards: 1,
+      statements: 1,
+      transactions: 2,
+      savedPasswords: 1,
+    });
+
+    await eraseAllData(db);
+
+    // Every store, by name, so a store added later can't be missed.
+    for (const name of db.objectStoreNames) {
+      expect(await db.count(name), name).toBe(0);
+    }
     db.close();
   });
 });

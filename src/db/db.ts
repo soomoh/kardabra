@@ -538,3 +538,44 @@ export async function putKeyIfAbsent(
   await tx.done;
   return existing?.key ?? candidate;
 }
+
+/** Forget every remembered PDF password and the key that sealed them, in
+ * one transaction. Without the key, a record a racing import writes
+ * afterwards can't be opened either (loadSavedPasswords passes it over). */
+export async function clearPdfPasswords(
+  db: IDBPDatabase<KardabraSchema>,
+  keyName: string,
+): Promise<void> {
+  const tx = db.transaction(['pdfPasswords', 'keys'], 'readwrite');
+  await tx.objectStore('pdfPasswords').clear();
+  await tx.objectStore('keys').delete(keyName);
+  await tx.done;
+}
+
+/** How much the user has stored, for the privacy page. */
+export async function countStoredData(db: IDBPDatabase<KardabraSchema>) {
+  const tx = db.transaction(
+    ['cards', 'statements', 'transactions', 'pdfPasswords'],
+    'readonly',
+  );
+  const [cards, statements, transactions, savedPasswords] = await Promise.all([
+    tx.objectStore('cards').count(),
+    tx.objectStore('statements').count(),
+    tx.objectStore('transactions').count(),
+    tx.objectStore('pdfPasswords').count(),
+  ]);
+  await tx.done;
+  return { cards, statements, transactions, savedPasswords };
+}
+
+/** Empty every store — data, settings, saved passwords and keys — in one
+ * transaction, so an erase never stops halfway. The stores themselves stay
+ * (no deleteDatabase: that would tell other open tabs the app was updated). */
+export async function eraseAllData(
+  db: IDBPDatabase<KardabraSchema>,
+): Promise<void> {
+  const names = [...db.objectStoreNames];
+  const tx = db.transaction(names, 'readwrite');
+  await Promise.all(names.map((name) => tx.objectStore(name).clear()));
+  await tx.done;
+}

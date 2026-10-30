@@ -78,7 +78,9 @@ export function ThemeSettingSync({
   }, [db, onLoad, reportError]);
 
   useEffect(() => {
-    if (!loaded || choice === stored.current) return;
+    // Nothing stored already means "system": don't write the default back
+    // (a fresh start or an erase stays empty).
+    if (!loaded || choice === (stored.current ?? 'system')) return;
     stored.current = choice;
     putSetting(db, THEME_SETTING_KEY, choice).catch(reportError);
   }, [db, loaded, choice, reportError]);

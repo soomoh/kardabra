@@ -974,6 +974,18 @@ h1[tabindex='-1']:focus {
 .delete-confirm {
   margin-top: var(--space-sm);
 }
+
+/* --- Privacy page: short sections of prose, kept to a readable measure. */
+.privacy-page p {
+  max-width: 65ch;
+}
+.privacy-page section {
+  margin-top: var(--space-xl);
+}
+/* An empty live region waits for news without taking up a line. */
+.privacy-page p:empty {
+  margin: 0;
+}
 .delete-confirm p {
   margin: 0;
 }

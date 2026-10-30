@@ -34,3 +34,12 @@ export function announceThemeChoice(choice: ThemeChoice): void {
   }
   window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: choice }));
 }
+
+/** Drop the mirror (erase-all): the next load follows the system again. */
+export function forgetThemeMirror(): void {
+  try {
+    localStorage.removeItem(THEME_MIRROR_KEY);
+  } catch {
+    // Blocked storage held nothing to forget.
+  }
+}

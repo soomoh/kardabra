@@ -203,6 +203,16 @@ test('a remembered password opens the next import without asking', async ({
     page.getByRole('heading', { name: 'Review and import' }),
   ).toBeVisible();
   await expect(page.getByLabel('Name as on your card')).toHaveCount(0);
+
+  // Forgotten on the privacy page: the file asks again.
+  await page.getByRole('link', { name: 'Privacy', exact: true }).click();
+  await expect(page.getByText(/^1 card has a saved password\./)).toBeVisible();
+  await page.getByRole('button', { name: 'Forget saved passwords' }).click();
+  const note = page.getByRole('status').filter({ hasText: /^Forgotten\./ });
+  await expect(note).toBeFocused();
+  await page.getByRole('link', { name: 'Import', exact: true }).click();
+  await page.locator('#statement-file-input').setInputFiles(locked);
+  await expect(page.getByLabel('Name as on your card')).toBeVisible();
 });
 
 test('passwords alone, without name or date of birth, each tried on every file', async ({

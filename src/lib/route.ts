@@ -1,17 +1,19 @@
-/** Hash routes: `#/`, `#/import`, `#/card/<id>`. Hash rather than path
+/** Hash routes: `#/`, `#/import`, `#/privacy`, `#/card/<id>`. Hash rather than path
  * routing so a static host (GitHub Pages) serves every route from one
- * index.html; three views don't justify a router dependency. */
+ * index.html; four views don't justify a router dependency. */
 export type View =
   /** `notice`: a one-off confirmation shown on arrival (after an import).
    * Not part of the URL, so a refresh or Back doesn't show it again. */
   | { name: 'dashboard'; notice?: string }
   | { name: 'import' }
+  | { name: 'privacy' }
   | { name: 'card'; cardId: string };
 
 /** The view a location hash names; anything unrecognised is the dashboard. */
 export function parseRoute(hash: string): View {
   const path = hash.replace(/^#/, '');
   if (path === '/import') return { name: 'import' };
+  if (path === '/privacy') return { name: 'privacy' };
   const card = /^\/card\/([^/]+)$/.exec(path);
   if (card) {
     try {
@@ -30,6 +32,8 @@ export function routeHash(view: View): string {
       return '#/';
     case 'import':
       return '#/import';
+    case 'privacy':
+      return '#/privacy';
     case 'card':
       return `#/card/${encodeURIComponent(view.cardId)}`;
   }

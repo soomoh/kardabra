@@ -6,7 +6,12 @@
 
 import type { IDBPDatabase } from 'idb';
 import type { KardabraSchema } from '../db/schema';
-import { getAllPdfPasswords, getKey, putKeyIfAbsent } from '../db/db';
+import {
+  clearPdfPasswords,
+  getAllPdfPasswords,
+  getKey,
+  putKeyIfAbsent,
+} from '../db/db';
 import { generateSecretKey, open, seal, type Sealed } from '../lib/secretBox';
 
 const KEY_NAME = 'pdf-passwords';
@@ -45,4 +50,12 @@ export async function sealPasswords(
     out.set(fileName, await seal(key, password));
   }
   return out;
+}
+
+/** Forget every saved password and its key; the next one saved gets a new
+ * key. */
+export function forgetSavedPasswords(
+  db: IDBPDatabase<KardabraSchema>,
+): Promise<void> {
+  return clearPdfPasswords(db, KEY_NAME);
 }

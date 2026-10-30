@@ -17,6 +17,7 @@ import {
 import { planImport } from '../../src/import/plan';
 import { commitImport } from '../../src/import/commit';
 import {
+  forgetSavedPasswords,
   loadSavedPasswords,
   sealPasswords,
 } from '../../src/import/savedPasswords';
@@ -120,6 +121,19 @@ describe('remembered PDF passwords', () => {
       readPdf,
     );
     expect(out.stillLocked.map((f) => f.name)).toEqual([LOCKED]);
+  });
+
+  it('forgetting removes every password and the key; the next save starts fresh', async () => {
+    await importLocked(true);
+    expect(await loadSavedPasswords(db)).toEqual([FIXTURE_PASSWORD]);
+    await forgetSavedPasswords(db);
+    expect(await getAllPdfPasswords(db)).toEqual([]);
+    expect(await getKey(db, 'pdf-passwords')).toBeUndefined();
+    expect(await loadSavedPasswords(db)).toEqual([]);
+
+    const sealed = await sealPasswords(db, new Map([['x', 'NEW0101']]));
+    await putPdfPassword(db, { cardId: 'c1', ...sealed.get('x')! });
+    expect(await loadSavedPasswords(db)).toEqual(['NEW0101']);
   });
 
   it('a record sealed under another key is passed over, not thrown', async () => {

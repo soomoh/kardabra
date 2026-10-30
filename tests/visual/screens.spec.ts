@@ -130,6 +130,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
           page.getByRole('heading', { name: 'Transactions' }),
         ).toBeVisible();
         await shot(page, 'card');
+
+        await page.getByRole('link', { name: 'Privacy', exact: true }).click();
+        await page.getByRole('button', { name: 'Erase everything' }).click();
+        await shot(page, 'privacy');
       });
     });
   }

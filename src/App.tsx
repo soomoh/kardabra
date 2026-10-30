@@ -4,7 +4,9 @@ import { DbProvider } from './db/DbProvider';
 import Dashboard from './components/Dashboard';
 import ImportPage from './components/ImportPage';
 import CardDetail from './components/CardDetail';
+import PrivacyPage from './components/PrivacyPage';
 import { parseRoute, routeHash, type View } from './lib/route';
+import { followErasesElsewhere } from './lib/erase';
 import {
   announceThemeChoice,
   readThemeMirror,
@@ -43,6 +45,8 @@ function App() {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  useEffect(followErasesElsewhere, []);
 
   useEffect(() => {
     function onHashChange() {
@@ -107,7 +111,7 @@ function App() {
     window.scrollTo(0, 0);
   }, [viewKey]);
 
-  // Persistent top nav: every view can always reach Dashboard and Import,
+  // Persistent top nav: every view can always reach every page,
   // so changing your mind mid-flow never leaves you stranded.
   // `aria-current` marks the active view for assistive tech; CSS styles
   // off it too, so the highlight can't disagree with what a screen
@@ -125,6 +129,12 @@ function App() {
         aria-current={view.name === 'import' ? 'page' : undefined}
       >
         Import
+      </a>
+      <a
+        href={routeHash({ name: 'privacy' })}
+        aria-current={view.name === 'privacy' ? 'page' : undefined}
+      >
+        Privacy
       </a>
     </nav>
   );
@@ -145,6 +155,7 @@ function App() {
               <Dashboard navigate={navigate} notice={view.notice} />
             )}
             {view.name === 'import' && <ImportPage navigate={navigate} />}
+            {view.name === 'privacy' && <PrivacyPage />}
             {view.name === 'card' && (
               <CardDetail
                 key={view.cardId}
