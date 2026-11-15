@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
 import {
@@ -20,10 +20,11 @@ import { cycleKey, monthlyTrends, type MonthlyTrends } from '../lib/trends';
 import { statementsToCheckByCard } from '../lib/reconcile';
 import { billsIn, billsInCopy, type BillsIn } from '../lib/billsIn';
 import CardTile from './CardTile';
+import SettledCardRow from './SettledCardRow';
 import TrendsChart from './TrendsChart';
 import { useDocumentTitle } from './useDocumentTitle';
 import { XIcon } from './icons';
-import type { View } from '../lib/route';
+import { routeHash, type View } from '../lib/route';
 
 interface DashboardProps {
   navigate: (view: View, options?: { replace?: boolean }) => void;
@@ -90,6 +91,20 @@ function Dashboard({ navigate, notice }: DashboardProps) {
   // Cards with a paid/unpaid write in flight: a double click must not
   // toggle twice (paid, then straight back to unpaid).
   const toggling = useRef(new Set<string>());
+  // Paying moves a card between a tile and a settled row, unmounting the
+  // focused button: once the reload renders, focus that card's new one.
+  const focusCardAction = useRef<string | null>(null);
+  useEffect(() => {
+    const cardId = focusCardAction.current;
+    if (cardId === null || entries === null) return;
+    focusCardAction.current = null;
+    // An undone ₹0 bill keeps no button: keep focus on the page, not <body>.
+    const target =
+      document.querySelector<HTMLElement>(
+        `[data-card-action="${CSS.escape(cardId)}"]`,
+      ) ?? document.querySelector<HTMLElement>('main');
+    target?.focus();
+  }, [entries]);
 
   async function handleTogglePaid(cardId: string, cycle: CycleRecord) {
     if (toggling.current.has(cardId)) return;
@@ -106,6 +121,7 @@ function Dashboard({ navigate, notice }: DashboardProps) {
     // one is marked paid as of today.
     const nextPaidAt = cycle.paidAt === undefined ? todayISO() : null;
     await setCyclePaid(db, cardId, cycle.period, nextPaidAt);
+    focusCardAction.current = cardId;
     bump();
   }
 
@@ -142,6 +158,14 @@ function Dashboard({ navigate, notice }: DashboardProps) {
   }
 
   const sorted = sortDashboardCards(entries);
+  // Settled cards (paid, or nothing owed) step back into a compact list;
+  // a card returns to a full tile once a statement with a bill comes in.
+  const tiles = sorted.filter(
+    ({ cycle }) => cycle === null || cycleNeedsPayment(cycle),
+  );
+  const settled = sorted.flatMap(({ card, cycle }) =>
+    cycle !== null && !cycleNeedsPayment(cycle) ? [{ card, cycle }] : [],
+  );
   // Most urgent first, so the first card that needs paying holds the
   // page's one primary action.
   const primaryCardId = sorted.find(
@@ -170,25 +194,48 @@ function Dashboard({ navigate, notice }: DashboardProps) {
         <Headline entries={entries} bills={bills.result} today={bills.today} />
       )}
 
-      <div className="card-grid">
-        {sorted.map(({ card, cycle }) => (
-          <CardTile
-            key={card.id}
-            card={card}
-            cycle={cycle}
-            statementsToCheck={toCheck.get(card.id) ?? 0}
-            primary={card.id === primaryCardId}
-            onTogglePaid={() => {
-              if (cycle !== null)
-                void handleTogglePaid(card.id, cycle).catch(reportError);
-            }}
-            onRename={(nickname) =>
-              void handleRename(card, nickname).catch(reportError)
-            }
-            onDelete={() => void handleDelete(card.id).catch(reportError)}
-          />
-        ))}
-      </div>
+      {tiles.length > 0 && (
+        <div className="card-grid">
+          {tiles.map(({ card, cycle }) => (
+            <CardTile
+              key={card.id}
+              card={card}
+              cycle={cycle}
+              statementsToCheck={toCheck.get(card.id) ?? 0}
+              primary={card.id === primaryCardId}
+              onTogglePaid={() => {
+                if (cycle !== null)
+                  void handleTogglePaid(card.id, cycle).catch(reportError);
+              }}
+              onRename={(nickname) =>
+                void handleRename(card, nickname).catch(reportError)
+              }
+              onDelete={() => void handleDelete(card.id).catch(reportError)}
+            />
+          ))}
+        </div>
+      )}
+
+      {settled.length > 0 && (
+        <section className="settled" aria-labelledby="settled-heading">
+          <h2 id="settled-heading" className="settled-heading">
+            Nothing to pay
+          </h2>
+          <ul className="settled-list">
+            {settled.map(({ card, cycle }) => (
+              <SettledCardRow
+                key={card.id}
+                card={card}
+                cycle={cycle}
+                statementsToCheck={toCheck.get(card.id) ?? 0}
+                onTogglePaid={() =>
+                  void handleTogglePaid(card.id, cycle).catch(reportError)
+                }
+              />
+            ))}
+          </ul>
+        </section>
+      )}
 
       {statementCount >= MIN_STATEMENTS_FOR_TRENDS && trends !== null && (
         <TrendsChart trends={trends} />
@@ -210,32 +257,46 @@ function Headline({
 }) {
   const { count, total, isEstimate } = unpaidTotals(entries);
   const copy = billsInCopy(bills, today);
-  const notes = copy.notes.length > 0 && (
-    <ul className="hero-notes">
-      {copy.notes.map((note, index) => (
-        // Notes can repeat (two cards may share a nickname); order is stable.
-        <li key={index}>{note}</li>
-      ))}
+  // Separate lines, not one paragraph: each is its own update.
+  const facts = (copy.payment !== null || copy.count !== null) && (
+    <ul className="hero-facts">
+      {copy.payment !== null && (
+        <li>
+          {copy.payment.prefix}{' '}
+          <strong>{formatDateLabel(copy.payment.dateISO, today)}</strong>
+        </li>
+      )}
+      {copy.count !== null && <li>{copy.count}</li>}
     </ul>
   );
-  const sub = (copy.lead !== null || copy.lines.length > 0) && (
-    <p className="hero-sub">
-      {copy.lead !== null && `${copy.lead}. `}
-      {copy.lines.map((line) => {
-        const date = formatDateLabel(line.dateISO, today);
-        return (
-          <Fragment key={line.prefix}>
-            {line.prefix} {line.strong ? <strong>{date}</strong> : date}.{' '}
-          </Fragment>
-        );
-      })}
-    </p>
+  const notes = copy.nudges.length > 0 && (
+    <ul className="hero-notes">
+      {copy.nudges.map((nudge, index) => (
+        // Nudges can repeat (two cards may share a nickname); order is stable.
+        <li key={index}>
+          {nudge.text}
+          {nudge.importCard !== undefined && (
+            <>
+              {' '}
+              <a
+                className="hero-link"
+                href={routeHash({ name: 'import' })}
+                // Visible words first, so voice control can say them.
+                aria-label={`Import it, ${nudge.importCard}'s statement`}
+              >
+                Import it
+              </a>
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
   );
   if (count === 0) {
     return (
       <header className="dashboard-header">
         <h1 className="hero-amount">All caught up</h1>
-        {sub || <p className="hero-sub">No unpaid bills on any card.</p>}
+        {facts || <p className="hero-sub">No unpaid bills on any card.</p>}
         {notes}
       </header>
     );
@@ -263,7 +324,7 @@ function Headline({
           )}
         </span>
       </h1>
-      {sub}
+      {facts}
       {notes}
     </header>
   );

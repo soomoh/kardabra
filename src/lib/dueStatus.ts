@@ -7,6 +7,10 @@
 
 import { daysBetweenISO, formatDateLabel } from './dates';
 import { cycleNeedsPayment, type PaymentFacts } from './cycles';
+import { plural } from './plural';
+
+/** An unpaid bill this many days from its due date shows a countdown. */
+const COUNTDOWN_DAYS = 7;
 
 export type DueTone = 'paid' | 'ok' | 'soon' | 'overdue' | 'unknown';
 
@@ -16,6 +20,8 @@ export interface DueStatus {
   /** The due date is more than 30 days gone: a newer statement is likely
    * missing, so the tile offers Import beside the label. */
   stale?: true;
+  /** "5 days left": set only in the last week before the due date. */
+  countdown?: string;
 }
 
 /** The minimal slice of CycleRecord this function needs — a subset, not
@@ -67,16 +73,24 @@ export function dueStatus(todayISO: string, cycle: DueFacts): DueStatus {
     };
   }
   if (daysUntilDue < 0) {
-    return { label: `Overdue by ${-daysUntilDue} days`, tone: 'overdue' };
+    return {
+      label: `Overdue by ${plural(-daysUntilDue, 'day')}`,
+      tone: 'overdue',
+    };
   }
   if (daysUntilDue === 0) {
-    return { label: 'Due today', tone: 'soon' };
+    return { label: 'Pay today', tone: 'soon' };
   }
-  // <= 3 days out counts as "soon" (same threshold whether it's 1, 2 or 3
-  // days away); 4+ days is still 'Due in N days' but with the calmer 'ok'
-  // tone.
-  if (daysUntilDue <= 3) {
-    return { label: `Due in ${daysUntilDue} days`, tone: 'soon' };
+  // "Before", not "due": a payment can take a day to reach the bank, so
+  // the wording errs early. The countdown appears only in the last week,
+  // when the urgency is worth the mental math it saves.
+  const label = `Pay before ${formatDateLabel(cycle.dueDateISO, todayISO)}`;
+  if (daysUntilDue <= COUNTDOWN_DAYS) {
+    return {
+      label,
+      tone: 'soon',
+      countdown: `${plural(daysUntilDue, 'day')} left`,
+    };
   }
-  return { label: `Due in ${daysUntilDue} days`, tone: 'ok' };
+  return { label, tone: 'ok' };
 }

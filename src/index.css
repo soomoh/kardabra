@@ -514,10 +514,29 @@ input[type='number']::-webkit-inner-spin-button {
 .hero-sub {
   margin: 0;
 }
-.hero-sub strong {
+/* The next payment and the month's count: one short line each. */
+.hero-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hero-facts li + li {
+  margin-top: var(--space-2xs);
+}
+.hero-facts strong {
   color: var(--hero-num);
 }
-/* What's still to come and what to pay now: quieter than the total. */
+.hero-link {
+  color: var(--hero-num);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.hero-link:hover {
+  color: var(--hero-ink);
+}
+/* Nudges that apply only now (a late statement, an unknown due date):
+   below a hairline, quieter than the total, one item each. */
 .hero-notes {
   margin: var(--space-sm) 0 0;
   padding: var(--space-sm) 0 0;
@@ -636,7 +655,77 @@ input[type='number']::-webkit-inner-spin-button {
   color: var(--ink-muted);
 }
 .due-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-xs);
   margin: 0;
+}
+/* "5 days left": only in the last week, beside the date it counts to. */
+.due-countdown {
+  color: var(--attention-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* Settled cards: one quiet row each, below what still needs paying. */
+.settled {
+  margin-top: var(--space-lg);
+}
+.settled-heading {
+  margin: 0 0 var(--space-xs);
+  color: var(--ink-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.settled-list {
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settled-row {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+  padding: var(--space-2xs) var(--space-md);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition: border-color var(--dur) var(--ease);
+}
+.settled-row:hover {
+  border-color: var(--line-strong);
+}
+.settled-name {
+  flex: 1 1 auto;
+  font-weight: 650;
+}
+.settled-row .card-open::after {
+  border-radius: var(--radius-md);
+}
+.settled-row .link-button {
+  position: relative;
+  z-index: 1;
+}
+.settled-amount {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+/* Narrow: the name takes its own line, the rest stays together below. */
+@media (max-width: 30rem) {
+  .settled-name {
+    flex-basis: 100%;
+  }
+  /* The whole row is the tap target (its ::after); the name needn't be. */
+  .settled-row .settled-name {
+    min-height: auto;
+  }
 }
 /* Bottom-anchored so the button sits at the same spot on every tile. */
 .card-action {

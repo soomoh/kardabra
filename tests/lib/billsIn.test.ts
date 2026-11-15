@@ -118,14 +118,13 @@ describe("billsIn: counts the calendar month's bills", () => {
         : c,
     );
 
-  it('names the next bill expected and the next payment due, separately', () => {
+  it('the next payment and the count, as separate lines', () => {
     const result = billsIn(cards, all, cycles, '2025-11-16');
     expect(result).toMatchObject({
       month: '2025-11',
       cardCount: 5,
       inCount: 3,
       allInPaid: false,
-      nextBillISO: '2025-11-18',
       earliestDueISO: '2025-11-23',
     });
     expect(result.awaited.map((a) => [a.card.id, a.expectedISO])).toEqual([
@@ -133,16 +132,9 @@ describe("billsIn: counts the calendar month's bills", () => {
       ['E', '2025-11-25'],
     ]);
     expect(billsInCopy(result, '2025-11-16')).toEqual({
-      lead: '3 of 5 November bills are in',
-      lines: [
-        {
-          prefix: 'Next bill expected around',
-          dateISO: '2025-11-18',
-          strong: false,
-        },
-        { prefix: 'Next payment due', dateISO: '2025-11-23', strong: true },
-      ],
-      notes: [],
+      payment: { prefix: 'Next payment before', dateISO: '2025-11-23' },
+      count: '3 of 5 November bills are in',
+      nudges: [],
     });
   });
 
@@ -153,24 +145,21 @@ describe("billsIn: counts the calendar month's bills", () => {
       billsIn(cards, all, cycles, '2025-11-16'),
       '2025-11-16',
     );
-    expect(copy.lines).toContainEqual({
-      prefix: 'Next payment due',
+    expect(copy.payment).toEqual({
+      prefix: 'Next payment before',
       dateISO: '2025-11-23',
-      strong: true,
     });
   });
 
-  it("all in: the payment due is the news, not next month's bill", () => {
+  it('all in: the count says so beside the next payment', () => {
     const copy = billsInCopy(
       billsIn(cards, allIn, allInCycles([]), '2025-11-21'),
       '2025-11-21',
     );
     expect(copy).toEqual({
-      lead: 'All 5 November bills are in',
-      lines: [
-        { prefix: 'Next payment due', dateISO: '2025-11-23', strong: true },
-      ],
-      notes: [],
+      payment: { prefix: 'Next payment before', dateISO: '2025-11-23' },
+      count: 'All 5 November bills are in',
+      nudges: [],
     });
   });
 
@@ -181,15 +170,13 @@ describe("billsIn: counts the calendar month's bills", () => {
     expect(result.inCount).toBe(5);
     expect(result.awaited).toEqual([]);
     expect(billsInCopy(result, '2025-11-21')).toEqual({
-      lead: 'All 5 November bills are in',
-      lines: [
-        { prefix: 'Next payment due', dateISO: '2025-11-30', strong: true },
-      ],
-      notes: [],
+      payment: { prefix: 'Next payment before', dateISO: '2025-11-30' },
+      count: 'All 5 November bills are in',
+      nudges: [],
     });
   });
 
-  it('all paid: says so, and when the next bill is expected', () => {
+  it('all paid: says so, and never when the next bill is expected', () => {
     const result = billsIn(
       cards,
       allIn,
@@ -198,15 +185,9 @@ describe("billsIn: counts the calendar month's bills", () => {
     );
     expect(result.earliestDueISO).toBeNull();
     expect(billsInCopy(result, '2025-11-22')).toEqual({
-      lead: 'All 5 November bills are paid',
-      lines: [
-        {
-          prefix: 'Next bill expected around',
-          dateISO: '2025-12-03',
-          strong: false,
-        },
-      ],
-      notes: [],
+      payment: null,
+      count: 'All 5 November bills are paid',
+      nudges: [],
     });
   });
 
@@ -217,15 +198,9 @@ describe("billsIn: counts the calendar month's bills", () => {
     expect(
       billsInCopy(billsIn(cards, all, paid, '2025-11-16'), '2025-11-16'),
     ).toEqual({
-      lead: '3 of 5 November bills are in and paid',
-      lines: [
-        {
-          prefix: 'Next bill expected around',
-          dateISO: '2025-11-18',
-          strong: false,
-        },
-      ],
-      notes: [],
+      payment: null,
+      count: '3 of 5 November bills are in and paid',
+      nudges: [],
     });
   });
 
@@ -239,17 +214,53 @@ describe("billsIn: counts the calendar month's bills", () => {
     );
     expect(result).toMatchObject({ inCount: 0, cardCount: 5 });
     expect(billsInCopy(result, '2025-12-02')).toEqual({
-      lead: '0 of 5 December bills are in',
-      lines: [
-        {
-          prefix: 'Next bill expected around',
-          dateISO: '2025-12-03',
-          strong: false,
-        },
-        { prefix: 'Next payment due', dateISO: '2025-12-05', strong: true },
-      ],
-      notes: [],
+      payment: { prefix: 'Next payment before', dateISO: '2025-12-05' },
+      count: '0 of 5 December bills are in',
+      nudges: [],
     });
+  });
+});
+
+describe('billsIn: a new card joins the count', () => {
+  // Four cards, all with November bills in, on 20 Nov.
+  const four = ['A', 'B', 'C', 'D'];
+  const fourStatements = four.flatMap((id) =>
+    statements(id, '2025-10-05', '2025-11-05'),
+  );
+  const fourCycles = four.map((id) => cycle(id, '2025-11', '2025-11-25'));
+  const count = (extra: StatementRecord[], extraCycles: CycleRecord[] = []) =>
+    billsInCopy(
+      billsIn(
+        [...four, 'E'].map(card),
+        [...fourStatements, ...extra],
+        [...fourCycles, ...extraCycles],
+        '2025-11-20',
+      ),
+      '2025-11-20',
+    ).count;
+
+  it("imported with this month's statement: all five in", () => {
+    expect(
+      count(statements('E', '2025-11-12'), [
+        cycle('E', '2025-11', '2025-12-02'),
+      ]),
+    ).toBe('All 5 November bills are in');
+  });
+
+  it("imported with last month's only: awaited, so four of five", () => {
+    expect(
+      count(statements('E', '2025-10-25'), [
+        cycle('E', '2025-10', '2025-11-14', true),
+      ]),
+    ).toBe('4 of 5 November bills are in');
+  });
+
+  it('imported with old history only: not counted', () => {
+    expect(
+      count(statements('E', '2025-07-25'), [
+        cycle('E', '2025-07', '2025-08-14', true),
+      ]),
+    ).toBe('All 4 November bills are in');
   });
 });
 
@@ -270,7 +281,7 @@ describe('billsIn: which cards are counted', () => {
     expect(result.awaited).toEqual([]);
   });
 
-  it('calls out a late statement, counted but not named as the next bill', () => {
+  it('a late statement: counted, with a nudge to import it', () => {
     const result = billsIn(
       [card('Axis')],
       statements('Axis', '2025-09-18', '2025-10-18'),
@@ -278,15 +289,19 @@ describe('billsIn: which cards are counted', () => {
       '2025-11-22',
     );
     expect(result.awaited).toMatchObject([{ late: true, usualDay: 18 }]);
-    expect(result.nextBillISO).toBeNull();
     expect(billsInCopy(result, '2025-11-22')).toEqual({
-      lead: null,
-      lines: [],
-      notes: ["Axis's bill usually comes by the 18th and isn't in yet."],
+      payment: null,
+      count: null,
+      nudges: [
+        {
+          text: "Axis's November statement usually comes by the 18th.",
+          importCard: 'Axis',
+        },
+      ],
     });
   });
 
-  it('a just-expected statement is not late yet', () => {
+  it('a just-expected statement is not late yet: no nudge', () => {
     const result = billsIn(
       [card('Axis')],
       statements('Axis', '2025-10-18'),
@@ -294,6 +309,23 @@ describe('billsIn: which cards are counted', () => {
       '2025-11-20',
     );
     expect(result.awaited).toMatchObject([{ late: false }]);
+    expect(billsInCopy(result, '2025-11-20').nudges).toEqual([]);
+  });
+
+  it('a late statement from last month names that month', () => {
+    // Expected 28 Nov; on 3 Dec it's late, and it's November's statement.
+    const result = billsIn(
+      [card('Axis')],
+      statements('Axis', '2025-09-28', '2025-10-28'),
+      [cycle('Axis', '2025-10', '2025-11-17', true)],
+      '2025-12-03',
+    );
+    expect(billsInCopy(result, '2025-12-03').nudges).toEqual([
+      {
+        text: "Axis's November statement usually comes by the 28th.",
+        importCard: 'Axis',
+      },
+    ]);
   });
 
   it('stops counting a statement more than a cycle overdue (card likely dropped)', () => {
@@ -341,20 +373,19 @@ describe('billsInCopy: payment due wording', () => {
       todayISO,
     );
 
-  it('one card: no count; due today is still "next payment due"', () => {
+  it('one card: no count; due today is still "next payment before"', () => {
     expect(one('2025-10-23', '2025-10-23')).toEqual({
-      lead: null,
-      lines: [
-        { prefix: 'Next payment due', dateISO: '2025-10-23', strong: true },
-      ],
-      notes: [],
+      payment: { prefix: 'Next payment before', dateISO: '2025-10-23' },
+      count: null,
+      nudges: [],
     });
   });
 
   it('past due says overdue', () => {
-    expect(one('2025-10-23', '2025-10-30').lines).toEqual([
-      { prefix: 'Payment overdue since', dateISO: '2025-10-23', strong: true },
-    ]);
+    expect(one('2025-10-23', '2025-10-30').payment).toEqual({
+      prefix: 'Payment overdue since',
+      dateISO: '2025-10-23',
+    });
   });
 
   it('a stale due date never hides a payment due soon', () => {
@@ -370,8 +401,8 @@ describe('billsInCopy: payment due wording', () => {
       '2025-10-30',
     );
     expect(result.earliestDueISO).toBe('2025-11-05');
-    expect(billsInCopy(result, '2025-10-30').lines.at(-1)?.prefix).toBe(
-      'Next payment due',
+    expect(billsInCopy(result, '2025-10-30').payment?.prefix).toBe(
+      'Next payment before',
     );
   });
 
@@ -386,8 +417,8 @@ describe('billsInCopy: payment due wording', () => {
       '2025-10-30',
     );
     expect(result.earliestDueISO).toBe('2025-11-05');
-    expect(billsInCopy(result, '2025-10-30').notes).toEqual([
-      "A's due date isn't known. Check its statement.",
+    expect(billsInCopy(result, '2025-10-30').nudges).toEqual([
+      { text: "A's due date isn't known. Check its statement." },
     ]);
   });
 
@@ -410,7 +441,7 @@ describe('billsInCopy: payment due wording', () => {
   });
 
   it('long past due reads as stale data, not a fresh alarm', () => {
-    expect(one('2025-10-23', '2025-11-30').lines.at(-1)?.prefix).toBe(
+    expect(one('2025-10-23', '2025-11-30').payment?.prefix).toBe(
       'A payment was due',
     );
   });

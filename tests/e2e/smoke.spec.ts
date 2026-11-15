@@ -306,6 +306,36 @@ test('keyboard only: choose files, open a card, focus and title follow', async (
   await expect(page.getByRole('main')).toBeFocused();
 });
 
+test('a paid card steps back into the settled list, and Undo brings it back', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Import', exact: true }).click();
+  await page.locator('#statement-file-input').setInputFiles(fixture);
+  await page.getByRole('button', { name: /^Import \d+ statements?$/ }).click();
+
+  await page.getByRole('button', { name: 'Mark paid, Card ····4321' }).click();
+  await expect(page.locator('.card-tile')).toHaveCount(0);
+  const row = page.locator('.settled-row');
+  await expect(row).toContainText('Paid ✓');
+  await expect(row).toContainText('Bill ₹12,345.67');
+  // Focus follows the card to its new place, not lost to the page.
+  await expect(
+    page.getByRole('button', { name: 'Undo paid, Card ····4321' }),
+  ).toBeFocused();
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.settled-row')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Mark paid, Card ····4321' }),
+  ).toBeFocused();
+
+  // The row opens the card, like a tile.
+  await page.getByRole('button', { name: 'Mark paid, Card ····4321' }).click();
+  await row.click({ position: { x: 8, y: 8 } });
+  await expect(page).toHaveURL(/#\/card\//);
+});
+
 test('tile rename and delete hand focus back to their buttons', async ({
   page,
 }) => {

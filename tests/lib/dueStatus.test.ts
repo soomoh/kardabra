@@ -60,30 +60,45 @@ describe('dueStatus', () => {
     });
   });
 
-  it('is "Due today" (tone soon) when the due date is today', () => {
+  it('regression: one day overdue is singular', () => {
+    expect(dueStatus(TODAY, { dueDateISO: '2025-11-09' }).label).toBe(
+      'Overdue by 1 day',
+    );
+  });
+
+  it('is "Pay today" (tone soon) when the due date is today', () => {
     expect(dueStatus(TODAY, { dueDateISO: '2025-11-10' })).toEqual({
-      label: 'Due today',
+      label: 'Pay today',
       tone: 'soon',
     });
   });
 
-  it('boundary: 3 days out is still "soon"', () => {
-    expect(dueStatus(TODAY, { dueDateISO: '2025-11-13' })).toEqual({
-      label: 'Due in 3 days',
+  it('within the last week: the date, a countdown, and the soon tone', () => {
+    expect(dueStatus(TODAY, { dueDateISO: '2025-11-11' })).toEqual({
+      label: 'Pay before 11 Nov',
       tone: 'soon',
+      countdown: '1 day left',
     });
   });
 
-  it('boundary: 4 days out drops to "ok"', () => {
-    expect(dueStatus(TODAY, { dueDateISO: '2025-11-14' })).toEqual({
-      label: 'Due in 4 days',
+  it('boundary: 7 days out still counts down', () => {
+    expect(dueStatus(TODAY, { dueDateISO: '2025-11-17' })).toEqual({
+      label: 'Pay before 17 Nov',
+      tone: 'soon',
+      countdown: '7 days left',
+    });
+  });
+
+  it('boundary: 8 days out shows only the date, calmly', () => {
+    expect(dueStatus(TODAY, { dueDateISO: '2025-11-18' })).toEqual({
+      label: 'Pay before 18 Nov',
       tone: 'ok',
     });
   });
 
-  it('is "ok" well in advance', () => {
-    expect(dueStatus(TODAY, { dueDateISO: '2025-11-30' })).toEqual({
-      label: 'Due in 20 days',
+  it('a due date next year carries its year', () => {
+    expect(dueStatus('2025-12-20', { dueDateISO: '2026-01-05' })).toEqual({
+      label: 'Pay before 5 Jan 2026',
       tone: 'ok',
     });
   });

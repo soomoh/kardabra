@@ -196,18 +196,18 @@ function CardTile({
             )}
             {status.label}
           </span>
+          {status.countdown !== undefined && (
+            <span className="due-countdown">{status.countdown}</span>
+          )}
           {status.stale && (
-            <>
-              {' '}
-              <a
-                className="tile-link"
-                href={routeHash({ name: 'import' })}
-                // Visible words first; the card tells several apart.
-                aria-label={`Import a newer statement, ${card.nickname}`}
-              >
-                Import a newer statement
-              </a>
-            </>
+            <a
+              className="tile-link"
+              href={routeHash({ name: 'import' })}
+              // Visible words first; the card tells several apart.
+              aria-label={`Import a newer statement, ${card.nickname}`}
+            >
+              Import a newer statement
+            </a>
           )}
         </p>
       )}
@@ -237,6 +237,7 @@ function CardTile({
                   : 'card-action'
             }
             onClick={onTogglePaid}
+            data-card-action={card.id}
             // The visible words first, then which card (several tiles).
             aria-label={`${cycle.paidAt === undefined ? 'Mark paid' : 'Undo paid'}, ${card.nickname}`}
           >
