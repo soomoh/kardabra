@@ -22,6 +22,49 @@ import type {
 const DB_NAME = 'kardabra';
 const DB_VERSION = 3;
 
+/** Run `work` inside `tx`, then wait for the transaction to commit, and
+ * return what `work` returned. If `work` fails, the transaction is aborted
+ * (a thrown error, such as an uncloneable value, doesn't abort it by itself,
+ * so half the writes would commit) and only `work`'s error is raised:
+ * the abort's rejection of `tx.done` is handled here, not left unhandled. */
+/** Issue one request per item and wait for them all. If issuing throws
+ * part-way (an uncloneable value), the requests already issued get a
+ * handler before the error is raised: the abort that follows rejects each
+ * of them, and nothing else would be listening. */
+export function issueAll<T>(
+  items: Iterable<T>,
+  issue: (item: T) => Promise<unknown>,
+): Promise<unknown[]> {
+  const issued: Promise<unknown>[] = [];
+  try {
+    for (const item of items) issued.push(issue(item));
+  } catch (error) {
+    for (const request of issued) request.catch(() => {});
+    throw error;
+  }
+  return Promise.all(issued);
+}
+
+export async function inTransaction<T>(
+  tx: { done: Promise<void>; abort(): void },
+  work: () => Promise<T>,
+): Promise<T> {
+  let result: T;
+  try {
+    result = await work();
+  } catch (error) {
+    tx.done.catch(() => {});
+    try {
+      tx.abort();
+    } catch {
+      // A failed request has already aborted it.
+    }
+    throw error;
+  }
+  await tx.done;
+  return result;
+}
+
 /** What the app needs to hear about while the database is open. */
 export interface DbLifecycle {
   /** An older version is open in another tab and is holding up the upgrade. */
@@ -175,21 +218,21 @@ export async function putStatementWithTransactions(
   const statements = tx.objectStore('statements');
   const transactions = tx.objectStore('transactions');
 
-  const existing = await statements
-    .index('by-card-period')
-    .get([statement.cardId, statement.period]);
-  if (existing !== undefined) {
-    const staleKeys = await transactions
-      .index('by-statement')
-      .getAllKeys(existing.id);
-    await Promise.all(staleKeys.map((key) => transactions.delete(key)));
-    await statements.delete(existing.id);
-  }
+  await inTransaction(tx, async () => {
+    const existing = await statements
+      .index('by-card-period')
+      .get([statement.cardId, statement.period]);
+    if (existing !== undefined) {
+      const staleKeys = await transactions
+        .index('by-statement')
+        .getAllKeys(existing.id);
+      await Promise.all(staleKeys.map((key) => transactions.delete(key)));
+      await statements.delete(existing.id);
+    }
 
-  await statements.put(statement);
-  await Promise.all(txns.map((txn) => transactions.add(txn)));
-
-  await tx.done;
+    await statements.put(statement);
+    await issueAll(txns, (txn) => transactions.add(txn));
+  });
 }
 
 /**
@@ -355,9 +398,11 @@ export async function putSettingIfAbsent(
   value: unknown,
 ): Promise<unknown> {
   const tx = db.transaction('settings', 'readwrite');
-  const existing = await tx.store.get(key);
-  if (existing === undefined) await tx.store.put({ key, value });
-  await tx.done;
+  const existing = await inTransaction(tx, async () => {
+    const found = await tx.store.get(key);
+    if (found === undefined) await tx.store.put({ key, value });
+    return found;
+  });
   return existing === undefined ? value : existing.value;
 }
 
@@ -375,41 +420,39 @@ export async function setCardDueDay(
     ['cards', 'statements', 'transactions', 'cycles'],
     'readwrite',
   );
-  const card = await tx.objectStore('cards').get(cardId);
-  if (card === undefined) {
-    await tx.done;
-    return;
-  }
-  await tx.objectStore('cards').put({ ...card, dueDay });
+  await inTransaction(tx, async () => {
+    const card = await tx.objectStore('cards').get(cardId);
+    if (card === undefined) return;
+    await tx.objectStore('cards').put({ ...card, dueDay });
 
-  const cardRange = IDBKeyRange.bound([cardId, ''], [cardId, '\uffff']);
-  const statements = await tx
-    .objectStore('statements')
-    .index('by-card-period')
-    .getAll(cardRange);
-  for (const statement of statements) {
-    if (statement.dueDateISO !== undefined) continue;
-    const cycle = await tx
-      .objectStore('cycles')
-      .get([cardId, statement.period]);
-    if (cycle === undefined) continue;
-    let anchorISO = statement.statementDateISO ?? null;
-    if (anchorISO === null) {
-      const txns = await tx
-        .objectStore('transactions')
-        .index('by-statement')
-        .getAll(statement.id);
-      for (const txn of txns) {
-        if (anchorISO === null || txn.dateISO > anchorISO)
-          anchorISO = txn.dateISO;
+    const cardRange = IDBKeyRange.bound([cardId, ''], [cardId, '\uffff']);
+    const statements = await tx
+      .objectStore('statements')
+      .index('by-card-period')
+      .getAll(cardRange);
+    for (const statement of statements) {
+      if (statement.dueDateISO !== undefined) continue;
+      const cycle = await tx
+        .objectStore('cycles')
+        .get([cardId, statement.period]);
+      if (cycle === undefined) continue;
+      let anchorISO = statement.statementDateISO ?? null;
+      if (anchorISO === null) {
+        const txns = await tx
+          .objectStore('transactions')
+          .index('by-statement')
+          .getAll(statement.id);
+        for (const txn of txns) {
+          if (anchorISO === null || txn.dateISO > anchorISO)
+            anchorISO = txn.dateISO;
+        }
       }
+      await tx.objectStore('cycles').put({
+        ...cycle,
+        dueDateISO: cycleDueDateISO(undefined, anchorISO, dueDay),
+      });
     }
-    await tx.objectStore('cycles').put({
-      ...cycle,
-      dueDateISO: cycleDueDateISO(undefined, anchorISO, dueDay),
-    });
-  }
-  await tx.done;
+  });
 }
 
 /** Delete a card with all its statements, transactions and cycles in one
@@ -428,30 +471,31 @@ export async function deleteCardCascade(
   // compound key or index.
   const cardRange = IDBKeyRange.bound([cardId, ''], [cardId, '￿']);
 
-  const statementKeys = await tx
-    .objectStore('statements')
-    .index('by-card-period')
-    .getAllKeys(cardRange);
-  for (const key of statementKeys) {
-    await tx.objectStore('statements').delete(key);
-  }
+  await inTransaction(tx, async () => {
+    const statementKeys = await tx
+      .objectStore('statements')
+      .index('by-card-period')
+      .getAllKeys(cardRange);
+    for (const key of statementKeys) {
+      await tx.objectStore('statements').delete(key);
+    }
 
-  const txnKeys = await tx
-    .objectStore('transactions')
-    .index('by-card-date')
-    .getAllKeys(cardRange);
-  for (const key of txnKeys) {
-    await tx.objectStore('transactions').delete(key);
-  }
+    const txnKeys = await tx
+      .objectStore('transactions')
+      .index('by-card-date')
+      .getAllKeys(cardRange);
+    for (const key of txnKeys) {
+      await tx.objectStore('transactions').delete(key);
+    }
 
-  const cycleKeys = await tx.objectStore('cycles').getAllKeys(cardRange);
-  for (const key of cycleKeys) {
-    await tx.objectStore('cycles').delete(key);
-  }
+    const cycleKeys = await tx.objectStore('cycles').getAllKeys(cardRange);
+    for (const key of cycleKeys) {
+      await tx.objectStore('cycles').delete(key);
+    }
 
-  await tx.objectStore('pdfPasswords').delete(cardId);
-  await tx.objectStore('cards').delete(cardId);
-  await tx.done;
+    await tx.objectStore('pdfPasswords').delete(cardId);
+    await tx.objectStore('cards').delete(cardId);
+  });
 }
 
 /** Remove from a stored statement (an export) the transactions that match
@@ -467,44 +511,44 @@ export async function removeMatchingTransactions(
     ['statements', 'transactions', 'cycles'],
     'readwrite',
   );
-  const statement = await tx.objectStore('statements').get(statementId);
-  if (statement === undefined) {
-    await tx.done;
-    return 0;
-  }
-  const wanted = new Map<string, number>();
-  for (const r of rows) {
-    const key = `${r.dateISO}|${r.amount}`;
-    wanted.set(key, (wanted.get(key) ?? 0) + 1);
-  }
-  const index = tx.objectStore('transactions').index('by-statement');
-  const kept: TransactionRecord[] = [];
-  let removed = 0;
-  let cursor = await index.openCursor(statementId);
-  while (cursor) {
-    const key = `${cursor.value.dateISO}|${cursor.value.amount}`;
-    const left = wanted.get(key) ?? 0;
-    if (left > 0) {
-      wanted.set(key, left - 1);
-      await cursor.delete();
-      removed++;
-    } else {
-      kept.push(cursor.value);
+  return inTransaction(tx, async () => {
+    const statement = await tx.objectStore('statements').get(statementId);
+    if (statement === undefined) return 0;
+    const wanted = new Map<string, number>();
+    for (const r of rows) {
+      const key = `${r.dateISO}|${r.amount}`;
+      wanted.set(key, (wanted.get(key) ?? 0) + 1);
     }
-    cursor = await cursor.continue();
-  }
-  if (kept.length === 0) {
-    await tx.objectStore('cycles').delete([statement.cardId, statement.period]);
-    await tx.objectStore('statements').delete(statementId);
-  } else if (removed > 0) {
-    await tx.objectStore('statements').put({
-      ...statement,
-      txnCount: kept.length,
-      fingerprint: statementFingerprint(kept),
-    });
-  }
-  await tx.done;
-  return removed;
+    const index = tx.objectStore('transactions').index('by-statement');
+    const kept: TransactionRecord[] = [];
+    let removed = 0;
+    let cursor = await index.openCursor(statementId);
+    while (cursor) {
+      const key = `${cursor.value.dateISO}|${cursor.value.amount}`;
+      const left = wanted.get(key) ?? 0;
+      if (left > 0) {
+        wanted.set(key, left - 1);
+        await cursor.delete();
+        removed++;
+      } else {
+        kept.push(cursor.value);
+      }
+      cursor = await cursor.continue();
+    }
+    if (kept.length === 0) {
+      await tx
+        .objectStore('cycles')
+        .delete([statement.cardId, statement.period]);
+      await tx.objectStore('statements').delete(statementId);
+    } else if (removed > 0) {
+      await tx.objectStore('statements').put({
+        ...statement,
+        txnCount: kept.length,
+        fingerprint: statementFingerprint(kept),
+      });
+    }
+    return removed;
+  });
 }
 
 /** Every remembered PDF password (still encrypted), one per card. */
@@ -538,9 +582,11 @@ export async function putKeyIfAbsent(
   candidate: CryptoKey,
 ): Promise<CryptoKey> {
   const tx = db.transaction('keys', 'readwrite');
-  const existing = await tx.store.get(name);
-  if (existing === undefined) await tx.store.put({ name, key: candidate });
-  await tx.done;
+  const existing = await inTransaction(tx, async () => {
+    const found = await tx.store.get(name);
+    if (found === undefined) await tx.store.put({ name, key: candidate });
+    return found;
+  });
   return existing?.key ?? candidate;
 }
 
@@ -552,9 +598,10 @@ export async function clearPdfPasswords(
   keyName: string,
 ): Promise<void> {
   const tx = db.transaction(['pdfPasswords', 'keys'], 'readwrite');
-  await tx.objectStore('pdfPasswords').clear();
-  await tx.objectStore('keys').delete(keyName);
-  await tx.done;
+  await inTransaction(tx, async () => {
+    await tx.objectStore('pdfPasswords').clear();
+    await tx.objectStore('keys').delete(keyName);
+  });
 }
 
 /** How much the user has stored, for the Your data page. */
@@ -563,13 +610,16 @@ export async function countStoredData(db: IDBPDatabase<KardabraSchema>) {
     ['cards', 'statements', 'transactions', 'pdfPasswords'],
     'readonly',
   );
-  const [cards, statements, transactions, savedPasswords] = await Promise.all([
-    tx.objectStore('cards').count(),
-    tx.objectStore('statements').count(),
-    tx.objectStore('transactions').count(),
-    tx.objectStore('pdfPasswords').count(),
-  ]);
-  await tx.done;
+  const [cards, statements, transactions, savedPasswords] = await inTransaction(
+    tx,
+    () =>
+      Promise.all([
+        tx.objectStore('cards').count(),
+        tx.objectStore('statements').count(),
+        tx.objectStore('transactions').count(),
+        tx.objectStore('pdfPasswords').count(),
+      ]),
+  );
   return { cards, statements, transactions, savedPasswords };
 }
 
@@ -581,8 +631,9 @@ export async function eraseAllData(
 ): Promise<void> {
   const names = [...db.objectStoreNames];
   const tx = db.transaction(names, 'readwrite');
-  await Promise.all(names.map((name) => tx.objectStore(name).clear()));
-  await tx.done;
+  await inTransaction(tx, () =>
+    Promise.all(names.map((name) => tx.objectStore(name).clear())),
+  );
 }
 
 /** The stores a backup carries, read in one transaction so the copy is
@@ -593,13 +644,16 @@ export async function getStoredData(
   db: IDBPDatabase<KardabraSchema>,
 ): Promise<StoredData> {
   const tx = db.transaction(BACKED_UP, 'readonly');
-  const [cards, statements, transactions, cycles] = await Promise.all([
-    tx.objectStore('cards').getAll(),
-    tx.objectStore('statements').getAll(),
-    tx.objectStore('transactions').getAll(),
-    tx.objectStore('cycles').getAll(),
-  ]);
-  await tx.done;
+  const [cards, statements, transactions, cycles] = await inTransaction(
+    tx,
+    () =>
+      Promise.all([
+        tx.objectStore('cards').getAll(),
+        tx.objectStore('statements').getAll(),
+        tx.objectStore('transactions').getAll(),
+        tx.objectStore('cycles').getAll(),
+      ]),
+  );
   return { cards, statements, transactions, cycles };
 }
 
@@ -614,20 +668,20 @@ export async function replaceStoredData(
   const tx = db.transaction([...BACKED_UP, 'pdfPasswords'], 'readwrite');
   const passwords = tx.objectStore('pdfPasswords');
   const kept = new Set(data.cards.map((c) => c.id));
-  const orphaned = (await passwords.getAllKeys()).filter((id) => !kept.has(id));
-  const writes: Promise<unknown>[] = BACKED_UP.map((name) =>
-    tx.objectStore(name).clear(),
-  );
-  for (const cardId of orphaned) writes.push(passwords.delete(cardId));
-  for (const card of data.cards) writes.push(tx.objectStore('cards').put(card));
-  for (const s of data.statements) {
-    writes.push(tx.objectStore('statements').put(s));
-  }
-  for (const t of data.transactions) {
-    writes.push(tx.objectStore('transactions').put(t));
-  }
-  for (const c of data.cycles) writes.push(tx.objectStore('cycles').put(c));
-  // tx.done joins the same await: when a write fails, the transaction's
-  // abort must not surface later as an unhandled rejection.
-  await Promise.all([...writes, tx.done]);
+  await inTransaction(tx, async () => {
+    const orphaned = (await passwords.getAllKeys()).filter(
+      (id) => !kept.has(id),
+    );
+    const writes: (() => Promise<unknown>)[] = [
+      ...BACKED_UP.map((name) => () => tx.objectStore(name).clear()),
+      ...orphaned.map((cardId) => () => passwords.delete(cardId)),
+      ...data.cards.map((c) => () => tx.objectStore('cards').put(c)),
+      ...data.statements.map((s) => () => tx.objectStore('statements').put(s)),
+      ...data.transactions.map(
+        (t) => () => tx.objectStore('transactions').put(t),
+      ),
+      ...data.cycles.map((c) => () => tx.objectStore('cycles').put(c)),
+    ];
+    await issueAll(writes, (write) => write());
+  });
 }

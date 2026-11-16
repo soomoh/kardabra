@@ -29,6 +29,7 @@ import {
   putKeyIfAbsent,
   countStoredData,
   eraseAllData,
+  inTransaction,
 } from '../../src/db/db';
 import type {
   CardRecord,
@@ -247,6 +248,67 @@ describe('putStatementWithTransactions — keep-fullest replace', () => {
     expect(await getStatement(db, s.cardId, s.period)).toEqual(s);
     expect(await getTransactionsForStatement(db, s.id)).toHaveLength(2);
     db.close();
+  });
+
+  it('a row that cannot be stored writes nothing — not even the statement', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    const db = await openKardabraDb();
+    const s = statement({ txnCount: 2 });
+    const good: TransactionRecord = {
+      id: 'txn-0',
+      statementId: s.id,
+      cardId: s.cardId,
+      dateISO: '2025-10-01',
+      payee: 'B',
+      amount: -50,
+    };
+    const row = {
+      id: 'txn-1',
+      statementId: s.id,
+      cardId: s.cardId,
+      dateISO: '2025-10-01',
+      payee: 'A',
+      amount: -100,
+      // A function can't be structured-cloned: add() throws instead of
+      // failing as a request, which doesn't abort the transaction itself.
+      note: () => {},
+    } as unknown as TransactionRecord;
+    // The good row's request is already issued when the bad one throws;
+    // the abort rejects it, and that must not go unhandled.
+    await expect(
+      putStatementWithTransactions(db, s, [good, row]),
+    ).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    process.off('unhandledRejection', record);
+    expect(unhandled).toEqual([]);
+    expect(await getStatement(db, s.cardId, s.period)).toBeUndefined();
+    db.close();
+  });
+
+  it('a failed request rejects once and leaves no unhandled rejection', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    try {
+      const db = await openKardabraDb();
+      const tx = db.transaction('settings', 'readwrite');
+      // A second add() under one key fails as a request: the transaction
+      // aborts, so tx.done rejects too — after work() has already thrown.
+      await expect(
+        inTransaction(tx, async () => {
+          await tx.store.add({ key: 'theme', value: 'dark' });
+          await tx.store.add({ key: 'theme', value: 'light' });
+        }),
+      ).rejects.toMatchObject({ name: 'ConstraintError' });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+      expect(await getSetting(db, 'theme')).toBeUndefined();
+      db.close();
+    } finally {
+      process.off('unhandledRejection', record);
+    }
   });
 
   it('replacing (cardId, period) deletes the old statement and leaves no orphaned transactions', async () => {
