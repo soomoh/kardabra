@@ -10,6 +10,16 @@ generator and bank detector in **burnrate**, re-expressed as data tables.
 - Version: commit `a6c9267e962c2f5c84ff9367ebdca30237860d74`
 - Licence: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
 
+## Sumeetgpt synthetic transaction generator
+
+Some brand names in the merchant table (`src/lib/merchantBrands.ts`) and the
+idea behind the seeded test-line generator (`tests/fixtures/statementLines.ts`)
+come from the merchant list in the Indian transaction categorisation
+synthetic dataset's generator. Its rows and templates are not used.
+
+- Source: https://huggingface.co/datasets/Sumeetgpt/indian-transaction-categorization-synthetic
+- Licence: MIT
+
 ## EFF short word list
 
 Backup passphrases are drawn from the EFF short word list #1
