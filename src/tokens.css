@@ -83,6 +83,11 @@
   --control-height: 2.5rem;
   --control-height-lg: 2.75rem;
   --control-height-sm: 2rem; /* segmented options (theme toggle) */
+  --control-height-xs: 1.75rem; /* checkboxes, status pills (taps go to a padded label) */
+  --tile-link-height: 2.25rem; /* a tile's open link; its ::after covers the tile */
+
+  /* Border widths: 1px is the default; badges are drawn a touch heavier. */
+  --border-badge: 1.5px;
 
   /* Motion: quiet — state changes only. */
   --dur: 180ms;

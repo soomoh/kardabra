@@ -120,6 +120,9 @@ test('card page: statements, transactions, fix payment, rename, fee', async ({
   await expect(
     page.getByRole('button', { name: 'Edit annual fee' }),
   ).toBeFocused();
+  // A select saves as it changes, so it says it did.
+  await page.getByRole('combobox', { name: /^Annual fee/ }).selectOption('LTF');
+  await expect(page.getByRole('status').getByText('Saved.')).toBeVisible();
 });
 
 test('unlock a password-protected PDF with cardholder details, with no network', async ({
@@ -436,6 +439,9 @@ test('chart: a whole month column opens its breakdown, by tap, hover or keyboard
   await expect(tooltip).toContainText('Total');
   await page.mouse.move(0, 0);
   await expect(tooltip).toBeVisible(); // pinned: stays
+  // A pinned box can cover the next months' columns (short bars): taps
+  // must go through it to them.
+  await expect(tooltip).toHaveCSS('pointer-events', 'none');
   await month.click();
   await expect(tooltip).toHaveCount(0); // tap again closes
 
@@ -453,6 +459,21 @@ test('chart: a whole month column opens its breakdown, by tap, hover or keyboard
   await page.getByRole('button', { name: 'View as table' }).focus();
   await page.keyboard.press('Tab'); // onto the month column
   await expect(tooltip).toBeVisible();
+
+  // Hover: the breakdown can itself be hovered (WCAG 1.4.13), and goes
+  // once the mouse leaves both it and its month.
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  const x = box.x + box.width / 2;
+  await page.mouse.move(0, 0); // the earlier click left it in the column
+  await page.mouse.move(x, box.y + box.height - 5, { steps: 5 });
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveCSS('pointer-events', 'auto');
+  const tip = (await tooltip.boundingBox())!;
+  await page.mouse.move(x, tip.y + tip.height / 2, { steps: 10 });
+  await expect(tooltip).toBeVisible();
+  await page.mouse.move(0, 0, { steps: 5 });
+  await expect(tooltip).toHaveCount(0);
 });
 
 test('a missing month is shown, and an older bill claims only what is known', async ({

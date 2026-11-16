@@ -376,8 +376,8 @@ select:disabled:hover {
   cursor: not-allowed;
 }
 input[type='checkbox'] {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: var(--control-height-xs);
+  height: var(--control-height-xs);
   accent-color: var(--primary);
   cursor: pointer;
 }
@@ -423,7 +423,7 @@ input[type='number']::-webkit-inner-spin-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
-  min-height: 1.75rem;
+  min-height: var(--control-height-xs);
   padding: 0 var(--space-sm);
   border: 2px solid transparent;
   border-radius: var(--radius-full);
@@ -467,7 +467,7 @@ input[type='number']::-webkit-inner-spin-button {
   display: inline-flex;
   align-items: center;
   padding: 0 var(--space-xs);
-  border: 1.5px solid var(--line-strong);
+  border: var(--border-badge) solid var(--line-strong);
   border-radius: var(--radius-full);
   color: var(--ink-muted);
   font-size: var(--text-sm);
@@ -629,7 +629,7 @@ input[type='number']::-webkit-inner-spin-button {
 .card-open {
   display: inline-flex;
   align-items: center;
-  min-height: 2.25rem;
+  min-height: var(--tile-link-height);
   color: inherit;
   text-decoration: none;
 }
@@ -1452,6 +1452,9 @@ h1[tabindex='-1']:focus {
   font-size: var(--text-sm);
   white-space: nowrap;
   pointer-events: none;
+}
+.trends-tooltip.is-hoverable {
+  pointer-events: auto;
 }
 .trends-tooltip ul {
   margin: var(--space-2xs) 0;

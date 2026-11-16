@@ -11,11 +11,20 @@ import {
 } from '../backup/backup';
 import { generatePassphrase } from '../backup/passphrase';
 
+const COPIED_FOR_MS = 4000;
+
 /** The passphrase, large and selectable, with a Copy button where the
  * browser allows one. */
 function PassphraseBox({ passphrase }: { passphrase: string }) {
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
   const canCopy = typeof navigator.clipboard?.writeText === 'function';
+  // "Copied." is news, not a state: it goes once read. A failure stays,
+  // since it says what to do instead.
+  useEffect(() => {
+    if (copy !== 'copied') return;
+    const timer = setTimeout(() => setCopy('idle'), COPIED_FOR_MS);
+    return () => clearTimeout(timer);
+  }, [copy]);
   return (
     <div className="passphrase-row" role="group" aria-label="Backup passphrase">
       <p className="passphrase">{passphrase}</p>

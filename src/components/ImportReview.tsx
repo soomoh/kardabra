@@ -257,6 +257,10 @@ function ImportReview({
                 : `Import ${count === 1 ? '1 statement' : `${count} statements`}`}
           </button>
         </div>
+        {/* A disabled button's new label isn't announced; this is. */}
+        <p role="status" className="visually-hidden">
+          {committing ? 'Importing your statements…' : ''}
+        </p>
       </div>
     </div>
   );

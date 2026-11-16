@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useReportError } from '../db/DbProvider';
 import type { CardRecord } from '../db/schema';
 import { formatINR } from '../lib/money';
@@ -8,6 +8,8 @@ import { PencilIcon, TrashIcon } from './icons';
 import { useReturnFocus } from './useReturnFocus';
 
 type FeeType = 'NONE' | 'LTF' | 'FYF' | 'AMOUNT';
+
+const SAVED_FOR_MS = 4000;
 
 const feeAmountOf = (card: CardRecord) =>
   card.feeLabel?.type === 'AMOUNT' ? (card.feeLabel.amount ?? 0) : 0;
@@ -70,18 +72,30 @@ function CardHeader({
     await onSave(updated);
   }
 
+  // A select saves as it changes: say so briefly, then get out of the way.
+  const [feeSaved, setFeeSaved] = useState(false);
+  useEffect(() => {
+    if (!feeSaved) return;
+    const timer = setTimeout(() => setFeeSaved(false), SAVED_FOR_MS);
+    return () => clearTimeout(timer);
+  }, [feeSaved]);
+
   async function handleFeeTypeChange(newType: FeeType) {
+    setFeeSaved(false);
     if (newType === 'NONE') {
       await saveFeeLabel(undefined);
       setFeeAmountDraft(null);
     } else if (newType === 'AMOUNT') {
+      // The amount box opens; "Saved." waits for its Save.
       const amount = feeAmountOf(card);
       await saveFeeLabel({ type: 'AMOUNT', amount });
       setFeeAmountDraft(String(amount));
+      return;
     } else {
       await saveFeeLabel({ type: newType });
       setFeeAmountDraft(null);
     }
+    setFeeSaved(true);
   }
 
   async function handleSaveFeeAmount() {
@@ -95,6 +109,7 @@ function CardHeader({
     setFeeError(null);
     await saveFeeLabel({ type: 'AMOUNT', amount });
     setFeeAmountDraft(null);
+    setFeeSaved(true);
   }
 
   async function handleSaveDueDay() {
@@ -331,6 +346,10 @@ function CardHeader({
               )}
             </>
           ))}
+        {/* Always present, so "Saved." is announced when it lands. */}
+        <span role="status" className="muted">
+          {feeSaved ? 'Saved.' : ''}
+        </span>
       </div>
       {discrepancy !== null && <p className="fee-discrepancy">{discrepancy}</p>}
     </header>

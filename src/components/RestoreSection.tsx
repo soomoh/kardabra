@@ -311,6 +311,10 @@ function RestoreSection({
           />
         </div>
       )}
+      {/* Outside the block above, so it's in place before "Opening…" is. */}
+      <p role="status" className="visually-hidden">
+        {step.kind === 'opening' ? 'Opening the backup…' : ''}
+      </p>
     </section>
   );
 }

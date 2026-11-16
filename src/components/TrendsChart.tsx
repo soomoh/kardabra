@@ -80,6 +80,8 @@ interface Tooltip {
   mode: 'hover' | 'focus' | 'pin';
 }
 
+const HOVER_CLOSE_MS = 300;
+
 function TrendsChart({ trends }: TrendsChartProps) {
   const [excludedCardIds, setExcludedCardIds] = useState<Set<string>>(
     new Set(),
@@ -113,7 +115,7 @@ function TrendsChart({ trends }: TrendsChartProps) {
     }
     function onPointerDown(event: PointerEvent) {
       const target = event.target as Element | null;
-      if (!target?.closest?.('.trends-hit')) setTooltip(null);
+      if (!target?.closest?.('.trends-hit, .trends-tooltip')) setTooltip(null);
     }
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointerdown', onPointerDown);
@@ -122,6 +124,22 @@ function TrendsChart({ trends }: TrendsChartProps) {
       window.removeEventListener('pointerdown', onPointerDown);
     };
   }, [tooltip]);
+  // A hover breakdown can itself be hovered (WCAG 1.4.13): leaving the
+  // month or the box closes it only after a moment, and entering either
+  // cancels that — so the mouse can cross the gap between them.
+  const hoverClose = useRef<number | null>(null);
+  function cancelHoverClose() {
+    if (hoverClose.current !== null) clearTimeout(hoverClose.current);
+    hoverClose.current = null;
+  }
+  function closeHoverSoon() {
+    cancelHoverClose();
+    hoverClose.current = window.setTimeout(() => {
+      hoverClose.current = null;
+      setTooltip((t) => (t?.mode === 'hover' ? null : t));
+    }, HOVER_CLOSE_MS);
+  }
+  useEffect(() => cancelHoverClose, []);
   const patternPrefix = useId();
   const [svgWidth, setChartWidth] = useState(MIN_CHART_WIDTH);
   // Callback ref (re-attached when the table view swaps the chart out);
@@ -456,6 +474,7 @@ function TrendsChart({ trends }: TrendsChartProps) {
                         role="img"
                         aria-label={monthLabel}
                         onPointerEnter={(e) => {
+                          cancelHoverClose();
                           // The mouse never takes over a pinned or
                           // keyboard-opened breakdown.
                           if (
@@ -465,11 +484,7 @@ function TrendsChart({ trends }: TrendsChartProps) {
                             showMonth(e.currentTarget, periodIndex, 'hover');
                         }}
                         onPointerLeave={(e) => {
-                          if (
-                            e.pointerType === 'mouse' &&
-                            tooltip?.mode === 'hover'
-                          )
-                            setTooltip(null);
+                          if (e.pointerType === 'mouse') closeHoverSoon();
                         }}
                         onClick={(e) =>
                           active && tooltip?.mode === 'pin'
@@ -498,9 +513,19 @@ function TrendsChart({ trends }: TrendsChartProps) {
 
           {tooltip !== null && tooltip.periodIndex < trends.periods.length && (
             <div
-              className="trends-tooltip"
+              // Only a mouse-hover box takes the pointer (to be hoverable);
+              // a pinned one lets taps through to the months beneath it.
+              className={
+                tooltip.mode === 'hover'
+                  ? 'trends-tooltip is-hoverable'
+                  : 'trends-tooltip'
+              }
               ref={tooltipRef}
               style={{ left: tooltip.x, top: tooltip.y }}
+              onPointerEnter={cancelHoverClose}
+              onPointerLeave={(e) => {
+                if (e.pointerType === 'mouse') closeHoverSoon();
+              }}
             >
               <div className="trends-tooltip-title">
                 {formatPeriodLabel(trends.periods[tooltip.periodIndex])}
