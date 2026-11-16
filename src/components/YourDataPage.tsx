@@ -7,6 +7,7 @@ import { forgetThemeMirror } from '../lib/theme';
 import { announceDataReplaced, startOver } from '../lib/erase';
 import { plural } from '../lib/plural';
 import BackupSection from './BackupSection';
+import ExportSection from './ExportSection';
 import RestoreSection from './RestoreSection';
 import { useDocumentTitle } from './useDocumentTitle';
 import { useReturnFocus } from './useReturnFocus';
@@ -101,6 +102,7 @@ function YourDataPage() {
 
       <BackupSection hasData={loaded && loaded.cards + loaded.statements > 0} />
       <RestoreSection current={loaded} />
+      <ExportSection hasData={loaded && loaded.transactions > 0} />
 
       {loaded !== null && (
         <section>

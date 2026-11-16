@@ -1,0 +1,71 @@
+# hledger CSV rules for Kardabra's transaction export.
+#
+#   hledger import --rules kardabra.rules kardabra-transactions.csv
+#
+# A starting point: copy it, then change the account names to your own.
+# Kardabra writes one row per card transaction, signed from the card's
+# side (a purchase is negative, a payment or refund positive), so the
+# amount below goes to the card's liability account as it stands.
+#
+# - Each card gets its own account, named after its nickname in Kardabra.
+#   Renaming a card in Kardabra renames its account here; to keep accounts
+#   fixed, match on %card_last4 instead (see the example at the end).
+# - Bill payments go to a transfer account. Import your bank statement
+#   with the other side of each payment to the same account, and it nets
+#   to zero instead of counting the money twice.
+# - Each statement's last row carries the balance the bank printed, as a
+#   balance assertion: a missing or double-counted row shows up as an
+#   error instead of drifting silently. `hledger import` itself doesn't
+#   check assertions, so run `hledger check` right after importing.
+# - Opening balances are not used here: enter the card's balance before
+#   the first imported statement yourself (an opening-balance transaction).
+# - Categories are yours to add: match %description_raw (the statement's
+#   own text, never changed by Kardabra) or %merchant, as in the examples.
+
+skip 1
+
+fields id, date, posted, description_raw, merchant, amount, currency, kind, card_last4, card_nickname, card_issuer, statement_id, period, opening_balance, closing_balance, booked
+
+date-format %Y-%m-%d
+
+# Payee is the cleaned merchant name, the note keeps the raw statement text.
+description %merchant | %description_raw
+
+currency %currency
+amount %amount
+
+account1 liabilities:creditcard:%card_nickname
+account2 expenses:unknown
+
+# The bank's balance after this statement, on its last row only.
+balance %closing_balance
+
+# `booked` is the transaction date, except a charge bought before the
+# previous statement closed but billed on this one, which moves to the day
+# after that statement. Dating by it keeps each statement's balance check
+# exact; the real transaction date stays as the secondary date (--date2).
+date %booked
+date2 %date
+
+if %kind ^payment$
+  account2 assets:transfer:card-payments
+
+if %kind ^(fee|forex-markup)$
+  account2 expenses:fees
+
+if %kind ^interest$
+  account2 expenses:interest
+
+if %kind ^cashback$
+  account2 income:cashback
+
+# Examples to adapt (remove the leading "# "):
+#
+# if %merchant ^(Swiggy|Zomato)$
+#   account2 expenses:food
+#
+# if %description_raw AMAZON
+#   account2 expenses:shopping
+#
+# if %card_last4 ^1234$
+#   account1 liabilities:creditcard:regalia

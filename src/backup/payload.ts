@@ -230,6 +230,7 @@ function parseStatement(value: unknown, n: number): StatementRecord {
     minDue: r.optionalNumber('minDue', 'a minimum due'),
     creditLimit: r.optionalNumber('creditLimit', 'a credit limit'),
     currency: r.optionalCurrency(),
+    issuer: r.optionalText('issuer', 'bank name'),
     creditBalance: r.optionalNumber('creditBalance', 'a credit balance'),
     openingBalance: r.optionalNumber('openingBalance', 'an opening balance'),
     paymentsTotal: r.optionalNumber('paymentsTotal', 'a payments total'),

@@ -32,6 +32,7 @@ export function sampleData(): StoredData {
         totalDue: 4200.5,
         minDue: 210,
         currency: 'INR',
+        issuer: 'HDFC Bank',
         skippedRows: 0,
         fingerprint: 'fp-a',
         fileName: 'statement_sep.csv',

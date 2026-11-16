@@ -142,6 +142,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
           .click();
         await expect(page.locator('.inline-notice')).toBeVisible();
         await shot(page, 'data-backup-done');
+        await page.getByRole('button', { name: 'Download CSV' }).click();
+        const exported = page
+          .locator('.inline-notice')
+          .filter({ hasText: /^Your export/ });
+        await expect(exported).toBeVisible();
+        await shot(page, 'data-export-done');
         await page.getByRole('button', { name: 'Erase everything' }).click();
         await shot(page, 'data');
       });

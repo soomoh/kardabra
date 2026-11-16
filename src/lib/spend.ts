@@ -212,6 +212,44 @@ export function netSpend(
   return total;
 }
 
+/** One statement of a card, as walkCardPayments needs it. `override` is the
+ * cycle's paymentOverride; `hasCycle` false for a statement with no cycle
+ * row (then nothing is matched against it, before or after). */
+export interface PaymentWalkInput {
+  period: string;
+  totalDue?: number;
+  transactions: { payee: string; amount: number }[];
+  hasCycle: boolean;
+  override?: PaymentMark[];
+}
+
+/** The payment set and spend of each of one card's statements, given
+ * oldest first: a statement's amount-match rung reads the previous month's
+ * expected due, which may be that statement's spend. The one walk both the
+ * stored spend (db.ts recomputeCardSpends) and the export's `payment` kind
+ * use, so the two can never disagree. */
+export function walkCardPayments(
+  statements: PaymentWalkInput[],
+): { indices: number[]; spend: number }[] {
+  let priorDue: number | null = null;
+  let priorPeriod: string | null = null;
+  return statements.map((statement) => {
+    // Only the previous month's bill is what this payment paid; across a
+    // missing month there's nothing reliable to match against.
+    if (priorPeriod !== previousPeriod(statement.period)) priorDue = null;
+    priorPeriod = statement.period;
+    const indices = identifyPaymentIndices(statement.transactions, {
+      priorExpectedDue: statement.hasCycle ? priorDue : null,
+      override: statement.override,
+    });
+    const spend = netSpend(statement.transactions, indices);
+    priorDue = statement.hasCycle
+      ? expectedDue(statement.totalDue, spend)
+      : null;
+    return { indices, spend };
+  });
+}
+
 /** Total of every credit — payments and adjustments together. */
 export function sumOfCredits(transactions: { amount: number }[]): number {
   let total = 0;

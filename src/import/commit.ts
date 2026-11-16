@@ -25,6 +25,7 @@ import {
   upsertCycle,
   recomputeCardSpends,
 } from '../db/db';
+import { confirmedIssuer } from '../lib/bankDetect';
 import { cycleDueDateISO, isValidDueDay } from '../lib/dates';
 import { netSpend, identifyPaymentIndices } from '../lib/spend';
 import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
@@ -108,6 +109,7 @@ function toStatementRecord(
     purchasesTotal: summary.purchasesTotal,
     chargesTotal: summary.chargesTotal,
     currency: parsed.currency,
+    issuer: confirmedIssuer(parsed),
     skippedRows: parsed.warnings.length,
     fingerprint: statementFingerprint(parsed.transactions),
     fileName: parsed.fileName,

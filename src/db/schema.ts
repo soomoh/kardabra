@@ -55,6 +55,10 @@ export interface StatementRecord {
   creditLimit?: number;
   /** v2: what the statement itself reported — see parser StatementSummary. */
   currency?: string;
+  /** The issuing bank, when the statement's header names it
+   * (parser/issuer.ts). An optional value field, so no DB_VERSION bump;
+   * statements imported before it was stored have none. */
+  issuer?: string;
   creditBalance?: number;
   openingBalance?: number;
   paymentsTotal?: number;

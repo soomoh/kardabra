@@ -49,6 +49,60 @@ It handles the following:
 - non-UTF-8 encodings (UTF-16 with a BOM, Windows-1252);
 - multiple credit/debit sign conventions.
 
+## Exporting your transactions
+
+**Your data → Export transactions** downloads every card transaction (or
+those from a chosen date on) as one CSV file. It is meant for spreadsheets and
+plain-text accounting tools such as [hledger](https://hledger.org), and it
+isn't encrypted.
+
+Columns, in this order. Headings are never renamed and new columns are only
+added at the end, so import rules written against the file keep working.
+
+| Column                                       | Meaning                                                                                                                                                                                                                                 |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                         | Stable id for the transaction: the same statement imported again gives the same id.                                                                                                                                                     |
+| `date`                                       | Transaction date, `YYYY-MM-DD`.                                                                                                                                                                                                         |
+| `posted`                                     | Posting date, when the statement prints one; otherwise empty.                                                                                                                                                                           |
+| `description`                                | The statement's own text, unchanged.                                                                                                                                                                                                    |
+| `merchant`                                   | A cleaned name: `PAYTM*BUNDL TECHNOLOGIES PVT BANGALORE IN` → `Swiggy`. Prefixes, reference numbers and the city are removed; a known brand is named.                                                                                   |
+| `amount`                                     | Plain decimal from the card's side: money out negative (`-500.00`), money in positive (a refund or bill payment, `500.00`).                                                                                                             |
+| `currency`                                   | ISO code, such as `INR`.                                                                                                                                                                                                                |
+| `kind`                                       | `purchase`, `refund`, `cashback`, `payment` (the bill payment), `fee`, `interest`, `emi` or `forex-markup`. A fee credited back is a `fee` with a positive amount.                                                                      |
+| `card_last4`, `card_nickname`, `card_issuer` | Which card. `card_issuer` is empty when the statement doesn't name its bank.                                                                                                                                                            |
+| `statement_id`, `period`                     | Which statement, and its month (`YYYY-MM`).                                                                                                                                                                                             |
+| `opening_balance`                            | The statement's previous balance, on its first row only.                                                                                                                                                                                |
+| `closing_balance`                            | What the statement says is owed, on its last row only.                                                                                                                                                                                  |
+| `booked`                                     | The date the row counts in the card's balance: `date`, except a charge bought before the previous statement closed but billed on this one, which moves to the day after that statement. Use it as the date wherever you check balances. |
+
+Balances use the same sign as amounts: an amount owed is negative (`-12500.00`),
+a credit balance positive. The file is UTF-8, comma-separated with standard
+quoting, rows oldest first. A text cell that would start with `=`, `+`, `-` or
+`@` gets a leading `'`, so a spreadsheet treats it as text instead of running
+it as a formula.
+
+### hledger
+
+[`docs/hledger/kardabra.rules`](docs/hledger/kardabra.rules) is a starting
+rules file: each card becomes `liabilities:creditcard:<nickname>`, bill
+payments go to `assets:transfer:card-payments` (so they net out against your
+bank import), fees and interest get their own accounts, and each statement's
+closing balance becomes a balance assertion. Rows are dated by `booked`, with
+the transaction date kept as the secondary date (`--date2`).
+
+```bash
+hledger import --rules kardabra.rules kardabra-transactions.csv
+hledger check   # import doesn't check balance assertions; this does
+```
+
+- **Import under the same file name every time.** `hledger import` remembers
+  the newest date it has imported _per file name_ and skips anything older,
+  so a second import of the same history adds nothing. Under a new name
+  (`kardabra-transactions (1).csv`) every row is imported again: save the new
+  export over the old one.
+- **Enter each card's balance before its first imported statement** yourself
+  (an opening-balance transaction), or the first assertion fails.
+
 ## Development
 
 ```bash

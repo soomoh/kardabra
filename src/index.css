@@ -323,6 +323,7 @@ button.primary:disabled:hover {
 input[type='text'],
 input[type='password'],
 input[type='number'],
+input[type='date'],
 select {
   min-height: var(--control-height);
   padding: 0 var(--space-sm);
@@ -792,6 +793,14 @@ input[type='number']::-webkit-inner-spin-button {
 .field input {
   font-size: var(--text-base);
   font-weight: 400;
+}
+
+.export-since {
+  max-width: 16rem;
+  margin-block-end: var(--space-sm);
+}
+.export-since + .muted {
+  margin-block-start: 0;
 }
 
 .password-form {
@@ -1480,6 +1489,7 @@ h1[tabindex='-1']:focus {
   input[type='text'],
   input[type='password'],
   input[type='number'],
+  input[type='date'],
   select,
   .app-nav a,
   .link-button,

@@ -6,14 +6,9 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { actionableCycle } from '../lib/cycles';
-import { cycleDueDateISO, isValidDueDay, previousPeriod } from '../lib/dates';
+import { cycleDueDateISO, isValidDueDay } from '../lib/dates';
 import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
-import {
-  identifyPaymentIndices,
-  netSpend,
-  expectedDue,
-  type PaymentMark,
-} from '../lib/spend';
+import { walkCardPayments, type PaymentMark } from '../lib/spend';
 import type {
   KardabraSchema,
   CardRecord,
@@ -246,29 +241,24 @@ export async function recomputeCardSpends(
     .slice()
     .sort((a, b) => a.period.localeCompare(b.period));
 
-  let priorExpectedDue: number | null = null;
-  let priorPeriod: string | null = null;
-  for (const statement of statements) {
-    // Only the previous month's bill is what this payment paid; across a
-    // missing month there's nothing reliable to match against.
-    if (priorPeriod !== previousPeriod(statement.period))
-      priorExpectedDue = null;
-    priorPeriod = statement.period;
-    const cycle = await db.get('cycles', [cardId, statement.period]);
-    if (cycle === undefined) {
-      priorExpectedDue = null;
-      continue;
-    }
-
-    const txns = await getTransactionsForStatement(db, statement.id);
-    const paymentIndices = identifyPaymentIndices(txns, {
-      priorExpectedDue,
-      override: cycle.paymentOverride,
-    });
-    const spend = netSpend(txns, paymentIndices);
-    await db.put('cycles', { ...cycle, spend });
-
-    priorExpectedDue = expectedDue(statement.totalDue, spend);
+  const cycles = await Promise.all(
+    statements.map((s) => db.get('cycles', [cardId, s.period])),
+  );
+  const txnLists = await Promise.all(
+    statements.map((s) => getTransactionsForStatement(db, s.id)),
+  );
+  const walked = walkCardPayments(
+    statements.map((statement, i) => ({
+      period: statement.period,
+      totalDue: statement.totalDue,
+      transactions: txnLists[i],
+      hasCycle: cycles[i] !== undefined,
+      override: cycles[i]?.paymentOverride,
+    })),
+  );
+  for (const [i, cycle] of cycles.entries()) {
+    if (cycle === undefined) continue;
+    await db.put('cycles', { ...cycle, spend: walked[i].spend });
   }
 }
 

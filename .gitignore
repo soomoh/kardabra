@@ -7,6 +7,7 @@
 !/.prettierignore
 !/.prettierrc
 !/.repo-visibility
+!/docs/
 !/LICENSE
 !/README.md
 !/THIRD_PARTY_NOTICES.md
