@@ -78,8 +78,8 @@ function CardTile({
   function saveRename(from: 'rename' | null) {
     if (mode.kind !== 'renaming' || cancelled.current) return;
     const trimmed = mode.draft.trim();
-    if (trimmed === '') return; // a card must keep some name
-    onRename(trimmed);
+    // A card must keep some name: an emptied box keeps the current one.
+    if (trimmed !== '') onRename(trimmed);
     leave(from);
   }
 

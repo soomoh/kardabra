@@ -130,8 +130,17 @@ function Dashboard({ navigate, notice }: DashboardProps) {
     bump();
   }
 
+  const deleting = useRef(new Set<string>());
   async function handleDelete(cardId: string) {
-    await deleteCardCascade(db, cardId);
+    if (deleting.current.has(cardId)) return;
+    deleting.current.add(cardId);
+    try {
+      await deleteCardCascade(db, cardId);
+    } finally {
+      deleting.current.delete(cardId);
+    }
+    // The focused Delete button goes with its tile; <main> keeps the place.
+    focusCardAction.current = cardId;
     bump();
   }
 
@@ -144,7 +153,7 @@ function Dashboard({ navigate, notice }: DashboardProps) {
       <div className="empty-state">
         <h1>No cards yet</h1>
         <p>
-          Import your credit-card statements to see what you owe, when it's due,
+          Import your credit-card statements to see what you owe, when it’s due,
           and where the money went. Everything stays on this device.
         </p>
         <button
@@ -195,25 +204,26 @@ function Dashboard({ navigate, notice }: DashboardProps) {
       )}
 
       {tiles.length > 0 && (
-        <div className="card-grid">
+        <ul className="card-grid">
           {tiles.map(({ card, cycle }) => (
-            <CardTile
-              key={card.id}
-              card={card}
-              cycle={cycle}
-              statementsToCheck={toCheck.get(card.id) ?? 0}
-              primary={card.id === primaryCardId}
-              onTogglePaid={() => {
-                if (cycle !== null)
-                  void handleTogglePaid(card.id, cycle).catch(reportError);
-              }}
-              onRename={(nickname) =>
-                void handleRename(card, nickname).catch(reportError)
-              }
-              onDelete={() => void handleDelete(card.id).catch(reportError)}
-            />
+            <li key={card.id}>
+              <CardTile
+                card={card}
+                cycle={cycle}
+                statementsToCheck={toCheck.get(card.id) ?? 0}
+                primary={card.id === primaryCardId}
+                onTogglePaid={() => {
+                  if (cycle !== null)
+                    void handleTogglePaid(card.id, cycle).catch(reportError);
+                }}
+                onRename={(nickname) =>
+                  void handleRename(card, nickname).catch(reportError)
+                }
+                onDelete={() => void handleDelete(card.id).catch(reportError)}
+              />
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       {settled.length > 0 && (
@@ -282,7 +292,7 @@ function Headline({
                 className="hero-link"
                 href={routeHash({ name: 'import' })}
                 // Visible words first, so voice control can say them.
-                aria-label={`Import it, ${nudge.importCard}'s statement`}
+                aria-label={`Import it, ${nudge.importCard}’s statement`}
               >
                 Import it
               </a>

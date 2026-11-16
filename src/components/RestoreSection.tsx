@@ -71,6 +71,8 @@ function RestoreSection({
   const [step, setStep] = useState<Step>({ kind: 'idle' });
   const [problem, setProblem] = useState<string | null>(null);
   const [typed, setTyped] = useState('');
+  // Open pressed with nothing typed: say so rather than do nothing.
+  const [blank, setBlank] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const chooseButton = useRef<HTMLButtonElement>(null);
   const doneNote = useRef<HTMLDivElement>(null);
@@ -86,6 +88,7 @@ function RestoreSection({
   function reset() {
     setStep({ kind: 'idle' });
     setTyped('');
+    setBlank(false);
     focusNext.current = 'choose';
   }
 
@@ -108,6 +111,7 @@ function RestoreSection({
   async function chooseFile(file: File) {
     setProblem(null);
     setTyped('');
+    setBlank(false);
     setStep({ kind: 'opening' });
     try {
       const unopenable = await checkBackupFile(file);
@@ -128,7 +132,12 @@ function RestoreSection({
   }
 
   async function submitPassphrase(file: File) {
-    if (typed.trim() === '') return;
+    if (typed.trim() === '') {
+      setBlank(true);
+      // Back to the box: a repeat press still lands somewhere that says why.
+      document.getElementById('backup-passphrase')?.focus();
+      return;
+    }
     setStep({ kind: 'opening' });
     try {
       await tryOpen(file, typed, true);
@@ -149,6 +158,7 @@ function RestoreSection({
     announceDataReplaced();
     bump();
     setTyped('');
+    setBlank(false);
     setStep({ kind: 'done', data });
     focusNext.current = 'done';
   }
@@ -188,14 +198,21 @@ function RestoreSection({
               autoCorrect="off"
               spellCheck={false}
               value={typed}
-              aria-invalid={step.wrong}
-              aria-describedby={step.wrong ? 'passphrase-error' : undefined}
-              onChange={(event) => setTyped(event.target.value)}
+              aria-invalid={step.wrong || blank}
+              aria-describedby={
+                step.wrong || blank ? 'passphrase-error' : undefined
+              }
+              onChange={(event) => {
+                setTyped(event.target.value);
+                setBlank(false);
+              }}
             />
           </label>
-          {step.wrong && (
+          {(step.wrong || blank) && (
             <p id="passphrase-error" className="error-text" role="alert">
-              {problemText({ ok: false, problem: 'wrong-passphrase' })}
+              {blank
+                ? 'Type the backup passphrase, then open the backup.'
+                : problemText({ ok: false, problem: 'wrong-passphrase' })}
             </p>
           )}
           <div className="import-actions">

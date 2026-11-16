@@ -128,7 +128,7 @@
   --series-6: #92ae5f;
   --series-7: #00638f;
   --series-8: #cdb144;
-  --series-other: #9a8a68;
+  --series-other: #958563; /* 3.18:1 on --surface */
 }
 
 /* index.html's inline script always sets data-theme before first paint:

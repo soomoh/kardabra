@@ -1,5 +1,5 @@
-/* index.css — hand-written, no CSS framework. Every value comes from
- * tokens.css; brand rules are in .claude/DESIGN.md. */
+/* index.css — hand-written, no CSS framework. Colour, type, spacing, radius
+ * and motion come from tokens.css; brand rules are in .claude/DESIGN.md. */
 
 @import './tokens.css';
 
@@ -228,6 +228,20 @@ button {
 }
 button:hover {
   background: var(--surface);
+}
+/* On a surface panel the surface fill wouldn't show: a plain outlined
+   button's hover sinks to paper. Classed buttons (chips, icons, links)
+   keep their own hover. */
+:is(
+    .card-tile,
+    .settled-row,
+    .review-group,
+    .trends-section,
+    .error-banner,
+    .notice
+  )
+  button:not([class]):hover:not(:disabled) {
+  background: var(--paper);
 }
 button:active {
   transform: translateY(1px);
@@ -536,6 +550,10 @@ input[type='number']::-webkit-inner-spin-button {
 .hero-link:hover {
   color: var(--hero-ink);
 }
+/* --focus is the band's own green in the light theme: ring in the band's ink. */
+.dashboard-header :focus-visible {
+  outline-color: var(--hero-ink);
+}
 /* Nudges that apply only now (a late statement, an unknown due date):
    below a hairline, quieter than the total, one item each. */
 .hero-notes {
@@ -565,6 +583,16 @@ input[type='number']::-webkit-inner-spin-button {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
   gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Tiles in a row stay one height. */
+.card-grid > li {
+  display: flex;
+}
+.card-grid > li > .card-tile {
+  flex: 1;
 }
 .card-tile {
   position: relative;
@@ -633,6 +661,8 @@ input[type='number']::-webkit-inner-spin-button {
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 0.2em;
+  /* Its own line on the tile: padding lifts the target past 24px. */
+  padding-block: var(--space-2xs);
 }
 .tile-link:hover {
   color: var(--primary-hover);
@@ -683,7 +713,7 @@ input[type='number']::-webkit-inner-spin-button {
 }
 .settled-list {
   display: grid;
-  gap: var(--space-2xs);
+  gap: var(--space-xs);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -747,6 +777,9 @@ input[type='number']::-webkit-inner-spin-button {
   border-radius: var(--radius-lg);
   background: var(--surface);
   text-align: center;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 .dropzone.is-dragover {
   border-color: var(--primary);
@@ -1104,11 +1137,15 @@ h1[tabindex='-1']:focus {
    callouts; results are notices (no dismiss: they go with the next action);
    errors use the error frame. */
 .inline-notice {
-  margin: var(--space-sm) 0 var(--space-md);
   padding: var(--space-sm) var(--space-md);
 }
+/* The frame hugs its text (whose paragraphs are capped at 65ch), so a
+   short result doesn't sit in a wide, half-empty box. */
+.inline-notice,
 .data-page .callout,
 .data-page .error-banner {
+  width: fit-content;
+  max-width: 100%;
   margin: var(--space-sm) 0 var(--space-md);
 }
 /* Focused from script when they appear; the frame already marks them. */
@@ -1126,7 +1163,7 @@ h1[tabindex='-1']:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
-  margin: var(--space-sm) 0;
+  margin: 0;
 }
 .data-page .copy-status {
   flex-basis: 100%;
@@ -1495,12 +1532,14 @@ h1[tabindex='-1']:focus {
   .link-button,
   .back-link,
   .card-open,
+  .tile-link,
   .file-summary summary,
   .review-statements > summary {
     min-height: var(--control-height-lg);
   }
   .link-button,
-  .back-link {
+  .back-link,
+  .tile-link {
     display: inline-flex;
     align-items: center;
   }

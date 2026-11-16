@@ -264,8 +264,11 @@ test('passwords alone, without name or date of birth, each tried on every file',
   await page
     .getByRole('button', { name: 'Have the passwords? Enter them instead' })
     .click();
+  // Each new box takes focus, so it is announced.
+  await expect(page.getByLabel('Password 1')).toBeFocused();
   await page.getByLabel('Password 1').fill('SOMEOTHERBANK');
   await page.getByRole('button', { name: '+ Add another password' }).click();
+  await expect(page.getByLabel('Password 2')).toBeFocused();
   const fixturePassword = 'JANE2010'; // pragma: allowlist secret
   await page.getByLabel('Password 2').fill(fixturePassword);
   await page.getByRole('button', { name: 'Unlock' }).click();
@@ -364,6 +367,19 @@ test('tile rename and delete hand focus back to their buttons', async ({
   await expect(
     page.getByRole('button', { name: 'Rename Travel' }),
   ).toBeFocused();
+
+  // An emptied name keeps the current one rather than leaving the editor
+  // stuck open.
+  await page.getByRole('button', { name: 'Rename Travel' }).click();
+  await page.getByLabel('Nickname for Travel').fill('  ');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.card-nickname')).toHaveText('Travel');
+
+  // Deleting takes the focused button with the tile: <main> keeps the place.
+  await page.getByRole('button', { name: 'Delete Travel' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('.card-tile')).toHaveCount(0);
+  await expect(page.getByRole('main')).toBeFocused();
 });
 
 test('review: a new card stands out and is named in plain view', async ({
@@ -517,7 +533,7 @@ test('Back, Forward and refresh keep the page; unknown routes show the dashboard
   await expect(page.locator('.card-grid')).toBeVisible();
   await page.goto('/#/card/gone');
   await expect(
-    page.getByText("This card isn't on this device any more."),
+    page.getByText('This card isn’t on this device any more.'),
   ).toBeVisible();
 
   // Deleting a card replaces its history entry: Back skips the deleted page.
@@ -586,6 +602,10 @@ test('review: remove a file, and a missing due day is pointed out', async ({
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Remove hdfc_style.csv' }).click();
+  // Its button goes with the row: focus moves to the other file's Remove.
+  await expect(
+    page.getByRole('button', { name: 'Remove legacy.xls' }),
+  ).toBeFocused();
   const importOne = page.getByRole('button', { name: 'Import 1 statement' });
   await expect(importOne).toBeVisible();
 

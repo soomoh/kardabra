@@ -101,6 +101,11 @@ test('backup: download on one device, restore on another', async ({
   // Wrong passphrase first: refused, nothing restored.
   const field = other.getByRole('textbox', { name: 'Backup passphrase' });
   await expect(field).toBeFocused();
+  // Nothing typed: said, not silently ignored.
+  await other.getByRole('button', { name: 'Open backup' }).click();
+  await expect(other.getByRole('alert')).toHaveText(
+    /Type the backup passphrase/,
+  );
   await field.fill('acid acorn acre acts afar');
   await other.getByRole('button', { name: 'Open backup' }).click();
   await expect(other.getByRole('alert')).toHaveText(/doesn’t open this backup/);

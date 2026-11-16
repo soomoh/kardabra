@@ -229,7 +229,7 @@ function CardHeader({
           </button>
           <button onClick={cancelDueDay}>Cancel</button>
           <p id="due-day-hint" className="muted due-day-hint">
-            Used when a statement doesn't print its due date.
+            Used when a statement doesn’t print its due date.
           </p>
           {dueDayError && (
             <p id="due-day-error" className="error-text" role="alert">

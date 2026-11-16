@@ -54,7 +54,7 @@ describe('dueStatus', () => {
     // days" for a bill that was long since paid — past a full statement
     // cycle, missing-newer-statement is the far likelier explanation.
     expect(dueStatus(TODAY, { dueDateISO: '2025-10-10' })).toEqual({
-      label: 'Was due 10 Oct.',
+      label: 'Was due 10 Oct',
       stale: true,
       tone: 'unknown',
     });

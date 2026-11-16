@@ -85,7 +85,7 @@ function CardDetail({ cardId, navigate }: CardDetailProps) {
     return (
       <div>
         {backLink}
-        <p>This card isn't on this device any more.</p>
+        <p>This card isn’t on this device any more.</p>
       </div>
     );
   }

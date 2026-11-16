@@ -67,7 +67,7 @@ export function dueStatus(todayISO: string, cycle: DueFacts): DueStatus {
   // history at once would otherwise read "Overdue by 67 days").
   if (daysUntilDue < -30) {
     return {
-      label: `Was due ${formatDateLabel(cycle.dueDateISO, todayISO)}.`,
+      label: `Was due ${formatDateLabel(cycle.dueDateISO, todayISO)}`,
       tone: 'unknown',
       stale: true,
     };

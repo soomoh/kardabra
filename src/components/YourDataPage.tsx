@@ -77,7 +77,7 @@ function YourDataPage() {
   return (
     <div className="data-page">
       <h1>Your data</h1>
-      <p className="data-lead">
+      <p className="lede">
         Kardabra keeps everything in this browser, on this device. Nothing is
         uploaded: there’s no server, and the app blocks itself from connecting
         to the internet.
@@ -169,6 +169,7 @@ function YourDataPage() {
               <button
                 autoFocus
                 aria-describedby="erase-warning"
+                disabled={erasing}
                 onClick={() => setConfirmingErase(false)}
               >
                 Cancel

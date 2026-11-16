@@ -219,14 +219,14 @@ export function billsInCopy(result: BillsIn, todayISO: string): BillsInCopy {
   const nudges: Nudge[] = [
     // No date to headline: name it, or the payment would go unmentioned.
     ...result.undatedUnpaid.map((card) => ({
-      text: `${card.nickname}'s due date isn't known. Check its statement.`,
+      text: `${card.nickname}’s due date isn’t known. Check its statement.`,
     })),
     // Worded as a habit, not a claim: a bank may skip a month with no
     // spend, and then no statement is coming at all.
     ...awaited
       .filter((a) => a.late)
       .map((a) => ({
-        text: `${a.card.nickname}'s ${monthName(a.expectedISO.slice(0, 7))} statement usually comes by the ${ordinal(a.usualDay)}.`,
+        text: `${a.card.nickname}’s ${monthName(a.expectedISO.slice(0, 7))} statement usually comes by the ${ordinal(a.usualDay)}.`,
         importCard: a.card.nickname,
       })),
   ];

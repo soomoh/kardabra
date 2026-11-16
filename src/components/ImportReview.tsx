@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { NEW_CARD, type FileOutcome } from '../import/plan';
 import type { CardRecord } from '../db/schema';
 import type { CommitUserInput } from '../import/commit';
@@ -61,6 +61,42 @@ function ImportReview({
 }: ImportReviewProps) {
   const [showMissing, setShowMissing] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Removing a file unmounts its focused button: once the plan without it
+  // renders, focus the next visible file's Remove (else the previous one),
+  // or <main>. Waits for the removed row to be gone, so a replan from
+  // something else (or a removal that failed) never moves focus.
+  const focusAfterRemove = useRef<{ removed: string; next: string } | null>(
+    null,
+  );
+  const removeButton = (fileName: string) =>
+    rootRef.current?.querySelector<HTMLElement>(
+      `[data-remove="${CSS.escape(fileName)}"]`,
+    );
+  useEffect(() => {
+    const pending = focusAfterRemove.current;
+    if (pending === null || removeButton(pending.removed)) return;
+    focusAfterRemove.current = null;
+    const next = removeButton(pending.next);
+    next?.focus();
+    if (next === undefined || next === null || document.activeElement !== next)
+      document.querySelector<HTMLElement>('main')?.focus();
+  }, [outcomes]);
+  function handleRemove(fileName: string) {
+    // Skips buttons in a collapsed list: they can't take focus.
+    const buttons = [
+      ...(rootRef.current?.querySelectorAll<HTMLElement>('[data-remove]') ??
+        []),
+    ].filter(
+      (b) => b.dataset.remove === fileName || !b.closest('details:not([open])'),
+    );
+    const at = buttons.findIndex((b) => b.dataset.remove === fileName);
+    focusAfterRemove.current = {
+      removed: fileName,
+      next: (buttons[at + 1] ?? buttons[at - 1])?.dataset.remove ?? '',
+    };
+    onRemove(fileName);
+  }
   const owners = questionOwners(outcomes);
   const { groups, unreadable } = reviewGroups(outcomes);
   const feedbackEntries = feedbackEntriesFor(outcomes, diagnostics);
@@ -100,7 +136,9 @@ function ImportReview({
     link.href = url;
     link.download = 'kardabra-unreadable-statements.txt';
     link.click();
-    URL.revokeObjectURL(url);
+    // Revoked later, as for backups and exports: some browsers start the
+    // download after click() returns.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   // A due day is asked only once the file's card is known: choosing an
@@ -126,9 +164,9 @@ function ImportReview({
     .map(({ group }) => group);
 
   return (
-    <div className="review">
+    <div className="review" ref={rootRef}>
       <p className="lede">
-        Nothing is saved until you press Import. Remove anything you don't want.
+        Nothing is saved until you press Import. Remove anything you don’t want.
       </p>
 
       <div ref={listRef}>
@@ -148,7 +186,7 @@ function ImportReview({
             disabled={committing}
             onNickname={onNickname}
             onDueDay={onDueDay}
-            onRemove={onRemove}
+            onRemove={handleRemove}
           />
         ))}
       </div>
@@ -156,7 +194,7 @@ function ImportReview({
       {unreadable.length > 0 && (
         <section className="review-group">
           <h2 className="review-group-title review-group-heading">
-            Couldn't read{' '}
+            Couldn’t read{' '}
             {unreadable.length === 1 ? 'this file' : 'these files'}
           </h2>
           <ul className="plan-list">
@@ -173,7 +211,7 @@ function ImportReview({
                 <RemoveButton
                   fileName={outcome.fileName}
                   disabled={committing}
-                  onRemove={onRemove}
+                  onRemove={handleRemove}
                 />
               </li>
             ))}
@@ -573,7 +611,7 @@ function trimsNote(trims: { period: string; fileName: string }[]): string {
   const names = trims
     .map((t) => `${t.fileName} (${monthLabel(t.period)})`)
     .join(', ');
-  return `Some of these transactions are also in ${names}. They'll be kept here only, so nothing is counted twice.`;
+  return `Some of these transactions are also in ${names}. They’ll be kept here only, so nothing is counted twice.`;
 }
 
 /** A statement replacing an export filed under the same month. */
@@ -613,6 +651,7 @@ function RemoveButton({
     <button
       className="icon-button"
       aria-label={`Remove ${fileName}`}
+      data-remove={fileName}
       title="Remove from this import"
       onClick={() => onRemove(fileName)}
       disabled={disabled}

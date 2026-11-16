@@ -87,13 +87,15 @@ function ImportPage({ navigate }: ImportPageProps) {
 
   // Each step of the import is announced: focus moves to its heading when
   // the step changes (the first step is reached via the app's own focus
-  // move to <main>).
-  const shownHeading = useRef(heading);
+  // move to <main>). Reading replaces the focused "Choose files" button, so
+  // it counts as a step; committing keeps focus on the Import button.
+  const step = state.stage === 'committing' ? 'planned' : state.stage;
+  const shownStep = useRef(step);
   useEffect(() => {
-    if (shownHeading.current === heading) return;
-    shownHeading.current = heading;
+    if (shownStep.current === step) return;
+    shownStep.current = step;
     headingRef.current?.focus();
-  }, [heading]);
+  }, [step]);
   // Number-masked diagnostics for files that couldn't be parsed, keyed by file
   // name — kept beside the plan (not in the state machine) since they're only
   // read when building a report. Overwritten on each new batch.

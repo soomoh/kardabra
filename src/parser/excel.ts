@@ -83,7 +83,7 @@ export function loadExcelRows(bytes: Uint8Array): unknown[][] {
   } catch {
     // Banks do send password-protected .xlsx files, which fail here too.
     throw unreadable(
-      "this Excel file couldn't be opened: it's damaged or password-protected",
+      'this Excel file couldn’t be opened: it’s damaged or password-protected',
       'If it has a password, open it in Excel and save a copy without one, or export it as CSV. Otherwise, re-download the statement.',
     );
   }

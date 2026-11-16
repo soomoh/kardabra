@@ -294,7 +294,7 @@ describe('billsIn: which cards are counted', () => {
       count: null,
       nudges: [
         {
-          text: "Axis's November statement usually comes by the 18th.",
+          text: 'Axis’s November statement usually comes by the 18th.',
           importCard: 'Axis',
         },
       ],
@@ -322,7 +322,7 @@ describe('billsIn: which cards are counted', () => {
     );
     expect(billsInCopy(result, '2025-12-03').nudges).toEqual([
       {
-        text: "Axis's November statement usually comes by the 28th.",
+        text: 'Axis’s November statement usually comes by the 28th.',
         importCard: 'Axis',
       },
     ]);
@@ -418,7 +418,7 @@ describe('billsInCopy: payment due wording', () => {
     );
     expect(result.earliestDueISO).toBe('2025-11-05');
     expect(billsInCopy(result, '2025-10-30').nudges).toEqual([
-      { text: "A's due date isn't known. Check its statement." },
+      { text: 'A’s due date isn’t known. Check its statement.' },
     ]);
   });
 

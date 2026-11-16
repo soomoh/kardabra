@@ -115,7 +115,9 @@ function ExportSection({ hasData }: { hasData: boolean | null }) {
           className="error-banner"
           role="alert"
         >
-          <p>The start date isn’t complete. Finish the date or clear it.</p>
+          <p id="export-since-error">
+            The start date isn’t complete. Finish the date or clear it.
+          </p>
         </div>
       )}
 
@@ -130,7 +132,11 @@ function ExportSection({ hasData }: { hasData: boolean | null }) {
               value={since}
               aria-invalid={result?.kind === 'unfinished' || undefined}
               max={todayISO()}
-              aria-describedby="export-since-hint"
+              aria-describedby={
+                result?.kind === 'unfinished'
+                  ? 'export-since-error export-since-hint'
+                  : 'export-since-hint'
+              }
               onChange={(event) => {
                 setSince(event.target.value);
                 // A result about the old date would now mislead.

@@ -26,12 +26,12 @@ function TotalsWarning({
           ? ' Some payments or refunds may be missing or misread.'
           : ' Some rows may be missing or misread.';
     lines.push(
-      `Totals don't add up: the statement says ${formatINR(result.expectedClosing)} is owed, the rows found add up to ${formatINR(result.computedClosing)}.${side}`,
+      `Totals don’t add up: the statement says ${formatINR(result.expectedClosing)} is owed, the rows found add up to ${formatINR(result.computedClosing)}.${side}`,
     );
   }
   if (skippedRows > 0) {
     lines.push(
-      `${skippedRows} row${skippedRows === 1 ? ' was' : 's were'} skipped because ${skippedRows === 1 ? 'its' : 'their'} date couldn't be read.`,
+      `${skippedRows} row${skippedRows === 1 ? ' was' : 's were'} skipped because ${skippedRows === 1 ? 'its' : 'their'} date couldn’t be read.`,
     );
   }
   if (lines.length === 0) return null;

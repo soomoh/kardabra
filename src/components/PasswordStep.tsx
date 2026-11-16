@@ -48,6 +48,10 @@ function PasswordStep({
   const [wantsPasswords, setWantsPasswords] = useState(false);
   const [remember, setRemember] = useState(false);
   const last4Ref = useRef<HTMLInputElement>(null);
+  const passwordList = useRef<HTMLFieldSetElement>(null);
+  // Revealing the list or adding a box: focus the newest box once it renders,
+  // so the new field is announced (the revealing button itself unmounts).
+  const focusNewPassword = useRef(false);
 
   // A retry reveals the last-4 field: move focus to it so the new question
   // is noticed (and announced), not just appended below the fold.
@@ -62,6 +66,12 @@ function PasswordStep({
   const typed = passwords.filter((p) => p !== '');
   const canSubmit = !unlocking && (hasDetails || typed.length > 0);
   const showPasswords = retry || wantsPasswords;
+  useEffect(() => {
+    if (!focusNewPassword.current) return;
+    focusNewPassword.current = false;
+    const boxes = passwordList.current?.querySelectorAll('input');
+    boxes?.[boxes.length - 1]?.focus();
+  }, [passwords.length, showPasswords]);
 
   function setPassword(index: number, value: string) {
     setPasswords(passwords.map((p, i) => (i === index ? value : p)));
@@ -92,7 +102,7 @@ function PasswordStep({
     <section>
       <p className="lede">
         Banks lock statements with a password, usually made from your name and
-        date of birth. Enter them once and we'll unlock{' '}
+        date of birth. Enter them once and we’ll unlock{' '}
         {count === 1 ? 'it' : `all ${count}`} for you. Nothing you type leaves
         this device.
       </p>
@@ -108,7 +118,6 @@ function PasswordStep({
         </label>
         <label>
           Date of birth
-          {dobInvalid && <span className="error-text">: use DD/MM/YYYY</span>}
           <input
             type="text"
             inputMode="numeric"
@@ -117,19 +126,26 @@ function PasswordStep({
             // Judged once the field is left, not on the first keystroke.
             onBlur={() => setDobLeft(true)}
             aria-invalid={dobInvalid}
+            aria-describedby={dobInvalid ? 'dob-error' : undefined}
             placeholder="DD/MM/YYYY"
             autoComplete="off"
           />
         </label>
+        {/* Outside the label, so it isn't read as part of the field's name. */}
+        {dobInvalid && (
+          <p id="dob-error" className="error-text" role="alert">
+            Use day, month and year, like 25/12/1990.
+          </p>
+        )}
         {retry && (
           <div className="callout">
             <p role="alert">
               {count === 1 ? 'One file is' : `${count} files are`} still locked.
-              Some banks, like SBI, also use your card's last 4 digits. Add
+              Some banks, like SBI, also use your card’s last 4 digits. Add
               them, or enter the password if you know it.
             </p>
             <label>
-              Card's last 4 digits
+              Card’s last 4 digits
               <input
                 ref={last4Ref}
                 type="text"
@@ -146,7 +162,7 @@ function PasswordStep({
           </div>
         )}
         {showPasswords ? (
-          <fieldset className="password-list">
+          <fieldset className="password-list" ref={passwordList}>
             <legend>Passwords you know</legend>
             <p className="muted">
               Add as many as you like. Each one is tried on every file.
@@ -164,7 +180,10 @@ function PasswordStep({
             <button
               type="button"
               className="link-button"
-              onClick={() => setPasswords([...passwords, ''])}
+              onClick={() => {
+                focusNewPassword.current = true;
+                setPasswords([...passwords, '']);
+              }}
             >
               + Add another password
             </button>
@@ -173,7 +192,10 @@ function PasswordStep({
           <button
             type="button"
             className="link-button"
-            onClick={() => setWantsPasswords(true)}
+            onClick={() => {
+              focusNewPassword.current = true;
+              setWantsPasswords(true);
+            }}
           >
             Have the passwords? Enter them instead
           </button>
@@ -191,13 +213,20 @@ function PasswordStep({
               Remember passwords on this device
             </label>
             <p id="remember-hint" className="field-hint">
-              Next time, they're tried before anything is asked. Your name and
-              date of birth aren't kept.
+              Next time, they’re tried before anything is asked. Your name and
+              date of birth aren’t kept.
             </p>
           </div>
         </div>
         <div className="import-actions">
-          <button type="submit" className="primary" disabled={!canSubmit}>
+          <button
+            type="submit"
+            className="primary"
+            disabled={!canSubmit}
+            aria-describedby={
+              canSubmit || unlocking ? undefined : 'unlock-needs'
+            }
+          >
             {!unlocking
               ? 'Unlock'
               : progress === undefined || progress.total < 2
@@ -208,6 +237,12 @@ function PasswordStep({
             Skip {count === 1 ? 'this file' : 'these files'}
           </button>
         </div>
+        {/* A disabled button says why. */}
+        {!canSubmit && !unlocking && (
+          <p id="unlock-needs" className="field-hint">
+            Unlock needs your name and date of birth, or a password.
+          </p>
+        )}
       </form>
       <details className="file-summary">
         <summary>

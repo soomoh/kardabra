@@ -147,7 +147,7 @@ function StatementTransactions({
           {/* A status, so a Save or Reset is announced when the text changes. */}
           <p role="status">
             {chosenText ??
-              'Kardabra guessed which transaction is your bill payment. You can choose the correct transaction(s) if we got it wrong.'}
+              'Kardabra guessed which transaction is your bill payment. If the guess is wrong, choose the right transactions.'}
           </p>
           <div className="import-actions">
             <button
