@@ -88,14 +88,17 @@ test('the card page links to its own insights, and Back returns', async ({
   await page.locator('.card-open').first().click();
   await page.getByRole('link', { name: 'Spend insights' }).click();
   await expect(page).toHaveURL(/#\/insights\/[^/]+$/);
-  await expect(page.getByLabel('Card')).not.toHaveValue('');
+  // Exact: the card page's "Rename card" button also says Card, and it can
+  // still be on screen for a moment after the link is clicked.
+  const cardSelect = page.getByRole('combobox', { name: 'Card', exact: true });
+  await expect(cardSelect).not.toHaveValue('');
 
   // selectOption doesn't focus the select; a keyboard user's would be.
-  await page.getByLabel('Card').focus();
-  await page.getByLabel('Card').selectOption({ label: 'All cards' });
+  await cardSelect.focus();
+  await cardSelect.selectOption({ label: 'All cards' });
   await expect(page).toHaveURL(/#\/insights$/);
   // Same page, other card: focus stays on the select that changed it.
-  await expect(page.getByLabel('Card')).toBeFocused();
+  await expect(cardSelect).toBeFocused();
   await page.goBack();
   await expect(page).toHaveURL(/#\/insights\/[^/]+$/);
   await page.getByRole('link', { name: /Back to/ }).click();
