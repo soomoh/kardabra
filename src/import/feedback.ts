@@ -101,6 +101,7 @@ const UNDERSTOOD_REJECTIONS: StatementErrorKind[] = [
   'pdf-locked',
   'too-large', // never read, so there is nothing to diagnose
   'unreadable-workbook', // damaged or locked: a new parser rule can't help
+  'pdf-no-text', // scanned: there is no text for a parser rule to read
 ];
 
 /** The plan's files Kardabra genuinely couldn't read, as report entries,

@@ -16,6 +16,7 @@ import { inferLocale } from './locale';
 import { inferCurrency } from './currency';
 import { accountLast4 } from './account';
 import { rowsFromPdfPages, type PdfTextItem } from './pdfRows';
+import { StatementError } from './errors';
 import type { ParsedStatement } from './types';
 
 /**
@@ -44,7 +45,28 @@ export function parsePdfText(
   fileName: string,
   pages: { items: PdfTextItem[] }[],
 ): ParsedStatement {
-  return parseRows(fileName, rowsFromPdfPages(pages));
+  // No text at all (usually a scan: pictures of text) — no parser rule can
+  // change that; the user needs another copy.
+  if (!pages.some((p) => p.items.some((item) => item.s.trim() !== ''))) {
+    throw new StatementError(
+      'pdf-no-text',
+      'no readable text in this PDF (likely a scanned copy)',
+      'Kardabra can’t find any text in this PDF. It may be a scanned copy. Try the statement PDF your bank emails, or download it again from your bank’s website or app.',
+    );
+  }
+  try {
+    return parseRows(fileName, rowsFromPdfPages(pages));
+  } catch (error) {
+    if (!(error instanceof StatementError) || error.kind !== 'no-table') {
+      throw error;
+    }
+    // The table finder's advice speaks of spreadsheet exports.
+    throw new StatementError(
+      error.kind,
+      error.message,
+      'Kardabra couldn’t find a list of transactions in this PDF. If it’s a credit card statement, its layout isn’t supported yet.',
+    );
+  }
 }
 
 /** The shared pipeline: rows (from any container) → a parsed statement. */

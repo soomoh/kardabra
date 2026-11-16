@@ -395,3 +395,30 @@ describe('HDFC international rows and summary boxes (no rewards column)', () => 
     expect(warnings).toEqual([]);
   });
 });
+
+describe('a PDF with no transaction table says why, in PDF words', () => {
+  it('a scanned PDF (no text on any page) is told apart from a missing table', () => {
+    // Image-only pages: pdf.js returns no items, or only whitespace.
+    const attempt = () =>
+      parsePdfText('scan.pdf', [page(), page(t(' ', 10, 10))]);
+    expect(attempt).toThrow(
+      expect.objectContaining({
+        kind: 'pdf-no-text',
+        advice: expect.stringMatching(/scanned copy/),
+      }),
+    );
+  });
+
+  it('a text PDF without a table keeps no-table, without spreadsheet advice', () => {
+    const attempt = () =>
+      parsePdfText('letter.pdf', [page(t('Dear customer,', 40, 700))]);
+    expect(attempt).toThrow(expect.objectContaining({ kind: 'no-table' }));
+    try {
+      attempt();
+    } catch (error) {
+      expect((error as { advice: string }).advice).not.toMatch(
+        /export|spreadsheet|download this file/i,
+      );
+    }
+  });
+});
