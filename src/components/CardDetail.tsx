@@ -140,6 +140,11 @@ function CardDetail({ cardId, navigate }: CardDetailProps) {
         onSaveDueDay={saveDueDay}
         onDelete={deleteCard}
       />
+      {statements.length > 0 && (
+        <p className="insights-link">
+          <a href={routeHash({ name: 'insights', cardId })}>Spend insights</a>
+        </p>
+      )}
       <StatementList
         statements={statements}
         transactions={transactions}

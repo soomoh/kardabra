@@ -104,6 +104,7 @@ html {
   .app-nav {
     order: 1;
     flex-basis: 100%;
+    flex-wrap: wrap;
   }
 }
 .app-brand {
@@ -125,6 +126,7 @@ html {
   color: var(--ink);
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
   transition:
     background-color var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
@@ -141,6 +143,12 @@ html {
 .app-nav a[aria-current='page'] {
   background: var(--surface);
   border-color: var(--line-strong);
+}
+/* Four links fit one phone row only with tighter pills. */
+@media (max-width: 30rem) {
+  .app-nav a {
+    padding: 0 var(--space-xs);
+  }
 }
 
 /* --- Controls --- */
@@ -1336,6 +1344,243 @@ h1[tabindex='-1']:focus {
   font-weight: 600;
 }
 
+/* --- Insights page --- */
+.insights-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-md) var(--space-lg);
+  margin-block: var(--space-md) var(--space-xs);
+}
+.insights-controls select {
+  min-width: 12rem;
+  max-width: 100%;
+  font-size: var(--text-base);
+  font-weight: 400;
+}
+/* Text options in one pill, the theme toggle's pattern: the ring, not the
+   faint fill, carries the state (3:1 on paper). */
+.segmented {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.segmented legend {
+  padding: 0;
+  margin-bottom: var(--space-2xs);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.segmented-options {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+}
+.segmented label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--ink-muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.segmented label:hover {
+  color: var(--ink);
+}
+.segmented label:active {
+  transform: translateY(1px);
+}
+.segmented label:has(:checked) {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+.segmented label:has(:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .segmented label:has(:checked) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+.insights-range {
+  margin: 0;
+}
+/* Heading > figure > subhead > table heading: each step clearly smaller,
+   so the page reads top-down (h1 30, h2 24, figure 20, h3 18, th 14). */
+.insights-page h2 {
+  font-size: var(--text-2xl);
+}
+.insights-page h3 {
+  margin: var(--space-lg) 0 var(--space-2xs);
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+.insights-lead .amount {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+/* A small line under a heading saying what the section is based on. */
+.section-note {
+  margin: calc(-1 * var(--space-xs)) 0 var(--space-sm);
+  font-size: var(--text-sm);
+}
+/* The merchant's bar sits under its name; numbers line up with the name. */
+.insights-page .txn-table td {
+  vertical-align: top;
+}
+/* In-text links: ink, underlined, green on hover (the brand's action colour). */
+.insights-page p a,
+.insights-link a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  transition: color var(--dur) var(--ease);
+}
+.insights-page p a:hover,
+.insights-link a:hover {
+  color: var(--primary);
+}
+.insights-page section > p {
+  max-width: 65ch;
+}
+/* A merchant's share of the biggest one: a thin rule under its name, so
+   the list reads at a glance without a chart. */
+.share-bar {
+  display: block;
+  height: 4px;
+  margin-top: var(--space-2xs);
+  border-radius: var(--radius-full);
+  background: var(--line);
+}
+.share-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink-muted);
+}
+/* The limit's full extent must show, so the track gets an edge. */
+.credit-bar {
+  margin-top: var(--space-2xs);
+  height: 8px;
+  outline: 1px solid var(--line-strong);
+  outline-offset: -1px;
+}
+.credit-bar[data-high] > span {
+  background: var(--attention);
+}
+.price-rise {
+  display: block;
+  color: var(--attention-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.cost-row {
+  border-bottom: 1px solid var(--line);
+}
+.cost-row:not(details),
+.cost-row > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: var(--control-height);
+  padding: var(--space-2xs) 0;
+}
+.cost-row .amount {
+  white-space: nowrap;
+}
+/* A row with lines behind it opens like the import review's lists. */
+.cost-row > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.cost-row > summary::-webkit-details-marker {
+  display: none;
+}
+/* The label wraps as text; the chevron sits in its own gutter. */
+.cost-row > summary > span:first-child {
+  position: relative;
+  padding-left: var(--space-md);
+}
+.cost-row > summary > span:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--ink-muted);
+  border-bottom: 2px solid var(--ink-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--dur) var(--ease);
+}
+.cost-row[open] > summary > span:first-child::before {
+  transform: rotate(45deg);
+}
+.cost-row > summary:hover .cost-count {
+  color: var(--ink);
+}
+.cost-row .table-scroll {
+  margin: 0 0 var(--space-sm) var(--space-md);
+}
+.cost-count {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.credit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.credit-list li + li {
+  margin-top: var(--space-md);
+}
+.credit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+.credit-card {
+  font-weight: 650;
+}
+.credit-pct {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.credit-pct[data-high] {
+  color: var(--attention-ink);
+}
+.credit-detail {
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-sm);
+}
+.credit-list + .section-note {
+  margin-top: var(--space-sm);
+  max-width: 65ch;
+}
+.insights-link {
+  margin: var(--space-sm) 0 0;
+}
+
 /* --- Spend trends chart --- */
 
 .trends-section {
@@ -1536,13 +1781,16 @@ h1[tabindex='-1']:focus {
   .back-link,
   .card-open,
   .tile-link,
+  .insights-link a,
+  .cost-row > summary,
   .file-summary summary,
   .review-statements > summary {
     min-height: var(--control-height-lg);
   }
   .link-button,
   .back-link,
-  .tile-link {
+  .tile-link,
+  .insights-link a {
     display: inline-flex;
     align-items: center;
   }
@@ -1550,6 +1798,9 @@ h1[tabindex='-1']:focus {
   .theme-toggle label {
     width: var(--control-height-lg);
     height: var(--control-height-lg);
+  }
+  .segmented label {
+    min-height: var(--control-height-lg);
   }
   .legend-chip {
     min-height: var(--control-height-lg);

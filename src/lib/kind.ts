@@ -12,6 +12,8 @@
  * the caller passes it in, so this label can never disagree with spend.
  */
 
+import { withoutOfferMarker } from './merchant';
+
 export const TRANSACTION_KINDS = [
   'purchase',
   'refund',
@@ -45,6 +47,13 @@ const KIND_PATTERNS: [
   // markup ("CONSOLIDATED FCY MARKUP FEE", "DCC MARKUP"), so the word alone
   // decides; no "FCY … MARKUP" pattern, whose .* is slow on hostile text.
   ['forex-markup', /\bMARK ?UP\b/],
+  // Dynamic currency conversion: "1.75% on all DCC Transaction" is the
+  // markup for paying in rupees abroad, charged as its own line. DCC alone
+  // isn't enough: a shop can be called that ("DCC SWEETS").
+  [
+    'forex-markup',
+    /\bON ALL DCC\b|\bDCC (?:TRANSACTIONS?|TXNS?|FEES?|CHARGES?)\b/,
+  ],
   ['interest', /\bINTEREST\b|\bFINANCE CHARGES?\b|\bFIN CHGS?\b/],
   [
     'fee',
@@ -61,7 +70,10 @@ export function transactionKind(
   isPayment: boolean,
 ): TransactionKind {
   if (isPayment) return 'payment';
-  const text = payee.toUpperCase().replace(/[-–—]/g, ' ').replace(/\s+/g, ' ');
+  const text = withoutOfferMarker(payee)
+    .toUpperCase()
+    .replace(/[-–—]/g, ' ')
+    .replace(/\s+/g, ' ');
   for (const [kind, pattern] of KIND_PATTERNS) {
     if (pattern.test(text)) return kind;
   }

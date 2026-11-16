@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { cleanMerchant, stripPayee } from '../../src/lib/merchant';
+import { cleanMerchant, merchantKey, stripPayee } from '../../src/lib/merchant';
 import { BRANDS } from '../../src/lib/merchantBrands';
 import { hasPaymentKeyword } from '../../src/lib/spend';
 import { transactionKind } from '../../src/lib/kind';
@@ -113,8 +113,47 @@ describe('cleanMerchant: brands', () => {
     ['INDITEX TRENT RETAIL', 'Zara'],
     ['10% Swiggy Cashback (Ref# ST574325291891941)', 'Swiggy'],
     ['IKEA Limited,Bangalore', 'IKEA'],
+    // A web address as the name, city glued on or not
+    ['WWWBIGBASKETCOM', 'BigBasket'],
+    ['WWWBIGBASKETCOMGURGOAN', 'BigBasket'],
+    ['WWW.BIGBASKET.COM GURGAON', 'BigBasket'],
+    ['WWWCOMMONFLOORCOM', 'COMMONFLOOR'],
+    // A foreign amount after the name
+    ['NETFLIX.COM 99 USD', 'Netflix'],
+    ['AWS EMEA USD 12.50', 'AWS EMEA'],
+    // A city or legal word glued on in title case; a brand's own capitals stay
+    ['TataPaymentsLimitedMumbai', 'TataPayments Limited'],
+    ['PhonePe', 'PhonePe'],
+    ['MakeMyTrip', 'MakeMyTrip'],
+    ['MakeMyTripLimited', 'MakeMyTrip'],
+    ['BookMyShow', 'BookMyShow'],
+    ['eBayInc', 'eBay Inc'],
+    // The bank's EMI offer marker is not part of the name
+    ['COOL STORE (Pay in EMIs)', 'COOL STORE'],
+    ['COOL STORE Pay in EMI', 'COOL STORE'],
+    // Too short to be a web address
+    ['WWWINCOM', 'WWWINCOM'],
   ])('%s → %s', (raw, expected) => {
     expect(cleanMerchant(raw)).toBe(expected);
+  });
+
+  test('merchantKey: spellings of one merchant meet, others stay apart', () => {
+    const key = (raw: string) => merchantKey(cleanMerchant(raw));
+    expect(
+      new Set(
+        [
+          'TataPaymentsLimitedMumbai',
+          'TATAPAYMENTS',
+          'TataPaymentsLimited',
+          'TATA PAYMENTS PVT LTD',
+        ].map(key),
+      ),
+    ).toEqual(new Set(['TATAPAYMENTS']));
+    expect(key('TATANEUBROADBAND')).not.toBe(key('TATAPAYMENTS'));
+    expect(merchantKey('LIMITED')).toBe('LIMITED'); // never empty
+    // A word's own ending is not a legal word
+    expect(merchantKey('UNLIMITED')).toBe('UNLIMITED');
+    expect(merchantKey('CAFÉ X')).not.toBe(merchantKey('CAF X'));
   });
 
   test.each([

@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import ImportPage from './components/ImportPage';
 import CardDetail from './components/CardDetail';
 import YourDataPage from './components/YourDataPage';
+import InsightsPage from './components/InsightsPage';
 import { parseRoute, routeHash, type View } from './lib/route';
 import { followDataReplacedElsewhere } from './lib/erase';
 import {
@@ -107,6 +108,14 @@ function App() {
   useEffect(() => {
     if (shownViewKey.current === viewKey) return;
     shownViewKey.current = viewKey;
+    // A select on the page changed the route (the Insights card picker):
+    // the user is still on that page, so focus stays on the select.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLSelectElement &&
+      mainRef.current?.contains(active)
+    )
+      return;
     mainRef.current?.focus();
     window.scrollTo(0, 0);
   }, [viewKey]);
@@ -123,6 +132,12 @@ function App() {
         aria-current={view.name === 'dashboard' ? 'page' : undefined}
       >
         Dashboard
+      </a>
+      <a
+        href={routeHash({ name: 'insights' })}
+        aria-current={view.name === 'insights' ? 'page' : undefined}
+      >
+        Insights
       </a>
       <a
         href={routeHash({ name: 'import' })}
@@ -156,6 +171,9 @@ function App() {
             )}
             {view.name === 'import' && <ImportPage navigate={navigate} />}
             {view.name === 'data' && <YourDataPage />}
+            {view.name === 'insights' && (
+              <InsightsPage cardId={view.cardId} navigate={navigate} />
+            )}
             {view.name === 'card' && (
               <CardDetail
                 key={view.cardId}

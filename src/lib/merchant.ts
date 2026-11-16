@@ -28,6 +28,7 @@ const CITIES = [
   'NEW DELHI',
   'DELHI',
   'GURGAON',
+  'GURGOAN', // as some merchants spell it
   'GURUGRAM',
   'NOIDA',
   'HYDERABAD',
@@ -153,10 +154,75 @@ function stripTrailingWord(
   return text;
 }
 
+/** The bank's offer printed on an eligible purchase ("AMAZON (Pay in
+ * EMIs)"): it says the purchase *could* be converted, not that it was. Not
+ * part of the merchant's name, and must not make the line an EMI line. */
+const EMI_OFFER = /\s*\(?\s*\bPAY IN EMIS?\b\s*\)?/gi;
+
+/** The payee without the bank's "(Pay in EMIs)" offer marker. */
+export function withoutOfferMarker(payee: string): string {
+  return payee.replace(EMI_OFFER, '');
+}
+
+/** A foreign-currency amount after the name ("NETFLIX 99 USD", "AWS USD
+ * 12.50"): the same merchant prints a different one each month. */
+const FOREIGN_AMOUNT_TAIL =
+  /\s+(?:\d[\d,]*(?:\.\d+)?\s*(?:USD|EUR|GBP|SGD|AED|AUD|CAD|JPY|CHF|HKD|THB|MYR)|(?:USD|EUR|GBP|SGD|AED|AUD|CAD|JPY|CHF|HKD|THB|MYR)\s*\d[\d,]*(?:\.\d+)?)$/i;
+
+/** "WWWBIGBASKETCOM", "WWW.BIGBASKET.COMGURGOAN": a web address printed as
+ * the name, sometimes with the city glued on. The address's name part is
+ * kept and a glued city split off (so the city rule removes it); anything
+ * else after the domain ending means it wasn't an address, and the word is
+ * left alone. */
+const DOMAIN_WORD = new RegExp(
+  `^WWW\\.?([A-Z0-9-]{3,}?)\\.?(?:COM|CO\\.?IN|IN|NET|ORG)(${CITIES.join('|').replace(/ /g, '')})?$`,
+);
+
+function unwrapDomain(word: string): string {
+  const match = DOMAIN_WORD.exec(word.toUpperCase());
+  if (match === null || word.length !== word.toUpperCase().length) return word;
+  const name = word.slice(3).replace(/^\./, '').slice(0, match[1].length);
+  return match[2] ? `${name} ${match[2]}` : name;
+}
+
+const GLUED_TAIL_WORDS = new Set([
+  ...CITIES.map((city) => city.replace(/ /g, '')),
+  'LIMITED',
+  'LTD',
+  'PVT',
+  'PRIVATE',
+  'LLP',
+  'INC',
+  'LLC',
+]);
+
+/** "TataPaymentsLimitedMumbai" → "TataPayments Limited Mumbai": a city or
+ * legal word glued in title case onto the end of a name is split off, so
+ * the city rule can remove it and the grouping key can drop it. Only those
+ * known words: a brand's own capitals ("MakeMyTrip", "PhonePe", "eBay")
+ * stay as they are, and the brand table still matches them. */
+function splitGluedTail(word: string): string {
+  let head = word;
+  const tail: string[] = [];
+  for (;;) {
+    const match = /^(.*[a-z])([A-Z][a-z]+)$/.exec(head);
+    if (match === null || !GLUED_TAIL_WORDS.has(match[2].toUpperCase())) break;
+    tail.unshift(match[2]);
+    head = match[1];
+  }
+  return [head, ...tail].join(' ');
+}
+
 /** The payee with known noise removed, original case kept. Never empty:
  * when stripping would leave nothing, the collapsed raw text is returned. */
 export function stripPayee(raw: string): string {
-  const collapsed = raw.replace(/\s+/g, ' ').trim();
+  const collapsed = withoutOfferMarker(raw)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(FOREIGN_AMOUNT_TAIL, '')
+    .split(' ')
+    .map((word) => splitGluedTail(unwrapDomain(word)))
+    .join(' ');
   // Prefixes first: the UPI prefix holds a reference number, and once that
   // is cut out the prefix no longer looks like one.
   let text = collapsed
@@ -192,6 +258,23 @@ export function stripPayee(raw: string): string {
 
   text = text.replace(/^[\s\-–,:.]+|[\s\-–,:.]+$/g, '').replace(/\s+/g, ' ');
   return text === '' ? collapsed : text;
+}
+
+/** Legal-form words that one statement prints and another drops. */
+const LEGAL_WORDS = /\b(?:PRIVATE|PVT|LIMITED|LTD|LLP|INC|LLC)\b\.?/g;
+
+/**
+ * The key two spellings of one merchant share: upper case, legal-form words
+ * dropped, and nothing but letters and digits (any script), so
+ * "TATAPAYMENTS", "TATA PAYMENTS LTD" and "TataPaymentsLimited" group
+ * together. A legal word glued on in capitals ("…PAYMENTSLIMITED") is not
+ * cut: it can't be told from a word's end ("UNLIMITED"). For grouping
+ * only; the shown name stays `cleanMerchant`'s.
+ */
+export function merchantKey(name: string): string {
+  const upper = name.toUpperCase();
+  const key = upper.replace(LEGAL_WORDS, ' ').replace(/[^\p{L}\p{N}]/gu, '');
+  return key === '' ? upper.replace(/[^\p{L}\p{N}]/gu, '') || upper : key;
 }
 
 /** The merchant name for a raw payee: a known brand's display name when one

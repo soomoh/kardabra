@@ -6,6 +6,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { insightsStatements } from '../e2e/insightsData';
 
 const fixture = (name: string) =>
   fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
@@ -150,6 +151,20 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await shot(page, 'data-export-done');
         await page.getByRole('button', { name: 'Erase everything' }).click();
         await shot(page, 'data');
+      });
+
+      test('insights', async ({ page }) => {
+        await page.clock.setFixedTime(new Date('2025-10-20T10:00:00'));
+        await page.goto('/#/import');
+        await page
+          .locator('#statement-file-input')
+          .setInputFiles(insightsStatements);
+        await page.getByRole('button', { name: 'Import 4 statements' }).click();
+        await expect(page.locator('.card-grid').first()).toBeVisible();
+        await page.getByRole('link', { name: 'Insights', exact: true }).click();
+        await expect(page.locator('.cost-list')).toBeVisible();
+        await page.locator('.cost-row summary').first().click();
+        await shot(page, 'insights');
       });
     });
   }

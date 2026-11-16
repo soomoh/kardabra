@@ -25,10 +25,15 @@ describe('transactionKind', () => {
     ['CONSOLIDATED FCY MARKUP FEE', -87.5, 'forex-markup'],
     ['GST ON FOREX MARKUP', -15.75, 'forex-markup'],
     ['DCC MARKUP FEE', -20, 'forex-markup'],
+    ['1.75% on all DCC Transaction', -42.5, 'forex-markup'],
+    ['DCC SWEETS', -300, 'purchase'],
     // Every part of an instalment plan stays an EMI line
     ['EMI 3/12 AMAZON PAY INDIA', -2500, 'emi'],
     ['EMI INTEREST', -310, 'emi'],
     ['GST ON EMI PROCESSING FEE', -36, 'emi'],
+    // The bank's offer to convert a purchase is not an EMI
+    ['AMAZON RETAIL BLR (Pay in EMI)', -24000, 'purchase'],
+    ['COOL STORE (Pay in EMIs)', -24000, 'purchase'],
     // Words that only contain a keyword are not that keyword
     ['PINTEREST', -100, 'purchase'],
     ['SUPERCHARGED GYM', -1500, 'purchase'],

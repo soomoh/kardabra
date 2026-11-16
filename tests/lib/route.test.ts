@@ -10,6 +10,10 @@ describe('parseRoute', () => {
     ['#/data', { name: 'data' }],
     ['#/card/abc-123', { name: 'card', cardId: 'abc-123' }],
     ['#/card/a%2Fb', { name: 'card', cardId: 'a/b' }],
+    ['#/insights', { name: 'insights' }],
+    ['#/insights/abc-123', { name: 'insights', cardId: 'abc-123' }],
+    ['#/insights/', { name: 'dashboard' }],
+    ['#/insights/%E0%A4', { name: 'dashboard' }],
     // Unknown or malformed routes fall back to the dashboard, never throw.
     ['#/nope', { name: 'dashboard' }],
     ['#/card/', { name: 'dashboard' }],
@@ -28,6 +32,8 @@ describe('routeHash', () => {
       { name: 'import' },
       { name: 'data' },
       { name: 'card', cardId: '4f1c/ä?#' },
+      { name: 'insights' },
+      { name: 'insights', cardId: '4f1c/ä?#' },
     ];
     for (const view of views) expect(parseRoute(routeHash(view))).toEqual(view);
     expect(routeHash({ name: 'dashboard', notice: 'Imported' })).toBe('#/');
