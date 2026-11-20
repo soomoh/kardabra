@@ -34,6 +34,29 @@ describe('transactionKind', () => {
     // The bank's offer to convert a purchase is not an EMI
     ['AMAZON RETAIL BLR (Pay in EMI)', -24000, 'purchase'],
     ['COOL STORE (Pay in EMIs)', -24000, 'purchase'],
+    // ...nor is the "EMI " prefix some banks put on an eligible purchase
+    ['EMI WWWBIGBASKETCOM', -812.5, 'purchase'],
+    ['EMI UPI-COOL STORE', -240, 'purchase'],
+    ['EMI PTM*SWIGGY', 120, 'refund'],
+    // A prefix with an instalment's shape is still an EMI line
+    ['EMI 03 OF 06 COOL STORE', -2500, 'emi'],
+    ['EMI PRINCIPAL AMOUNT', -2190, 'emi'],
+    ['EMI LOAN BOOKING', -50000, 'emi'],
+    ['EMI CONVERSION COOL STORE', -2500, 'emi'],
+    ['EMI CONVERTED COOL STORE', -2500, 'emi'],
+    ['EMI INSTALMENT', -2500, 'emi'],
+    ['EMI INSTALLMENT 4', -2500, 'emi'],
+    ['EMI DEBIT', -2500, 'emi'],
+    ['EMI REPAYMENT', -2500, 'emi'],
+    ['EMI AMOUNT', -2500, 'emi'],
+    ['EMI 12 MONTHS COOL STORE', -2500, 'emi'],
+    ['EMI 003/012 COOL STORE', -2500, 'emi'],
+    ['EMI REVERSAL', 2500, 'emi'],
+    ['EMI CHARGES', -150, 'emi'],
+    ['EMI GST', -27, 'emi'],
+    ['EMI-3/12 COOL STORE', -2500, 'emi'],
+    // A word that only contains a guard word is a merchant
+    ['EMI PINTEREST', -100, 'purchase'],
     // Words that only contain a keyword are not that keyword
     ['PINTEREST', -100, 'purchase'],
     ['SUPERCHARGED GYM', -1500, 'purchase'],

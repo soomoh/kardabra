@@ -159,9 +159,21 @@ function stripTrailingWord(
  * part of the merchant's name, and must not make the line an EMI line. */
 const EMI_OFFER = /\s*\(?\s*\bPAY IN EMIS?\b\s*\)?/gi;
 
-/** The payee without the bank's "(Pay in EMIs)" offer marker. */
+/** Other banks prefix an eligible purchase with "EMI " ("EMI WWWBIGBASKETCOM",
+ * "EMI UPI-COOL STORE"). A real instalment line has an instalment's shape: a
+ * count ("EMI 3/12", "EMI 03 OF 06") or a word an instalment line uses
+ * (interest, principal, instalment, conversion, debit, amount, fees, GST…).
+ * Only a prefix with neither is an offer; when in doubt the line stays an
+ * EMI, the safe side (a missed offer leaves a purchase in the loan account to
+ * see; a missed EMI would hide a repayment among purchases). Anchored at the
+ * start: one attempt, so the lookahead's .* stays linear. */
+const EMI_PREFIX_OFFER =
+  /^\s*EMI\s+(?!.*(?:\b\d{1,3}\s*(?:\/|OF)\s*\d{1,3}\b|\bINTEREST|PRINCIPAL|\bINSTAL|\bCONVER|FORECLOS|PRE ?CLOS|\bLOAN\b|\bDEBIT\b|\b(?:RE)?PAYMENT\b|\bDUE\b|\bAMOUNT\b|\bAMT\b|\bTENURE\b|\bMONTHS?\b|\bREVERS|\bCHA?RGES?\b|\bCHGS?\b|\bFEES?\b|\b[CSI]?GST\b))/i;
+
+/** The payee without the bank's EMI offer marker ("(Pay in EMIs)", or an
+ * "EMI " prefix on an ordinary purchase). */
 export function withoutOfferMarker(payee: string): string {
-  return payee.replace(EMI_OFFER, '');
+  return payee.replace(EMI_OFFER, '').replace(EMI_PREFIX_OFFER, '');
 }
 
 /** A foreign-currency amount after the name ("NETFLIX 99 USD", "AWS USD

@@ -131,6 +131,9 @@ describe('cleanMerchant: brands', () => {
     // The bank's EMI offer marker is not part of the name
     ['COOL STORE (Pay in EMIs)', 'COOL STORE'],
     ['COOL STORE Pay in EMI', 'COOL STORE'],
+    ['EMI WWWBIGBASKETCOM', 'BigBasket'],
+    ['EMI UPI-COOL STORE', 'COOL STORE'],
+    ['EMI 3/12 COOL STORE', 'EMI 3/12 COOL STORE'],
     // Too short to be a web address
     ['WWWINCOM', 'WWWINCOM'],
   ])('%s → %s', (raw, expected) => {
