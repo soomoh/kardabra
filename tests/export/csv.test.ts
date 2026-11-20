@@ -301,6 +301,53 @@ describe('buildExportCsv', () => {
     ]);
   });
 
+  // Banks print the total due rounded to the rupee and carry the exact
+  // balance forward: the export closes on the exact balance, or hledger's
+  // check fails by paise every month. The catastrophic case is the reverse:
+  // a misread row hidden by the exact sum, so anything beyond rounding keeps
+  // the printed total.
+  test.each([
+    ['rounded down: the exact balance', 7161.94, 7162, '-7161.94'],
+    ['rounded up: the exact balance', 7162.5, 7162, '-7162.50'],
+    ['beyond rounding: the printed total', 7161.4, 7162, '-7162.00'],
+    ['a total with paise: printed as is', 7161.94, 7161.9, '-7161.90'],
+  ])('closing, %s', (_, owed, totalDue, closing) => {
+    const rows = parseCsv(
+      buildExportCsv(
+        input({
+          statements: [statement({ totalDue, openingBalance: 1000 })],
+          transactions: [
+            txn('s-oct', '2026-10-03', 'EARLY', -1000.1),
+            txn('s-oct', '2026-10-20', 'LATE', -(owed - 2000.1)),
+          ],
+        }),
+        // Cut: the closing still counts the rows before `since`.
+        { since: '2026-10-15' },
+      ),
+    );
+    expect(rows.map((r) => r.closing_balance)).toEqual([closing]);
+  });
+
+  // Credit closes. An opening the bank didn't mark as credit is read as owed,
+  // so the sum lands far off and the printed total stands (fails safe).
+  test.each([
+    ['from an amount owed: the exact credit', 500, 1699.6, '1199.60'],
+    ['unmarked credit opening: the printed total', 500, 699.6, '1200.00'],
+    ['no opening: the printed total', undefined, 1199.6, '1200.00'],
+  ])('closing in credit, %s', (_, openingBalance, paid, closing) => {
+    const rows = parseCsv(
+      buildExportCsv(
+        input({
+          statements: [
+            statement({ totalDue: 0, creditBalance: 1200, openingBalance }),
+          ],
+          transactions: [txn('s-oct', '2026-10-05', 'PAYMENT', paid)],
+        }),
+      ),
+    );
+    expect(rows[0].closing_balance).toBe(closing);
+  });
+
   test('booked: a late-posted charge moves to the day after the previous statement', () => {
     const rows = parseCsv(
       buildExportCsv(

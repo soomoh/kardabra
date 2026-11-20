@@ -77,13 +77,37 @@ function money(value: number): string {
 
 /** The statement's closing balance in the export's sign: a credit balance
  * positive, an amount due negative; empty when the statement states neither
- * (a transaction export). */
-function closingBalance(statement: StatementRecord): string {
+ * (a transaction export).
+ *
+ * Banks round the printed total to the rupee (HDFC prints 7161.94 as "7162")
+ * but carry the exact balance into the next statement's opening, so a
+ * balance check against the printed total fails by paise every month. When
+ * the printed total is a whole rupee and the exact balance (opening plus
+ * every row) rounds to it, the exact balance is exported. Otherwise the
+ * printed figure stands, so a misread row still fails the check. */
+function closingBalance(
+  statement: StatementRecord,
+  txns: TransactionRecord[],
+): string {
+  let printed: number;
   if (statement.creditBalance !== undefined && statement.creditBalance > 0) {
-    return money(statement.creditBalance);
+    printed = statement.creditBalance;
+  } else if (statement.totalDue !== undefined) {
+    printed = -statement.totalDue;
+  } else {
+    return '';
   }
-  if (statement.totalDue !== undefined) return money(-statement.totalDue);
-  return '';
+  if (statement.openingBalance === undefined || !Number.isInteger(printed)) {
+    return money(printed);
+  }
+  // In paise, so float sums can't drift. The opening is read as an amount owed.
+  const paise = (v: number) => Math.round(v * 100);
+  const exact =
+    -paise(statement.openingBalance) +
+    txns.reduce((sum, txn) => sum + paise(txn.amount), 0);
+  return Math.abs(exact - paise(printed)) <= 50
+    ? money(exact / 100)
+    : money(printed);
 }
 
 /** The last day a card's statement covers: its printed date, else (a
@@ -220,7 +244,10 @@ export function buildExportCsv(
   for (const [statementId, row] of last) {
     const statement = statementsById.get(statementId);
     if (statement === undefined) continue;
-    row.closing_balance = closingBalance(statement);
+    row.closing_balance = closingBalance(
+      statement,
+      txnsByStatement.get(statementId) ?? [],
+    );
     const opening = first.get(statementId);
     if (
       opening !== undefined &&
