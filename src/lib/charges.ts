@@ -15,7 +15,8 @@
  * which nets every non-payment credit regardless of wording.)
  * There is also no visible "trailing cost report" anywhere: interest/late
  * totals surface only as the per-statement hint in CardDetail, and the
- * annual fee only as a discrepancy note against the user's own fee label.
+ * annual fee only as a discrepancy note against the user's own fee label
+ * (or, on a card with no label, as the label import fills in).
  *
  * Classification happens at READ time, never stored on the transaction
  * record — the same read-time approach lib/spend.ts uses. classifyCharge
@@ -52,6 +53,17 @@ const CHARGE_PATTERNS: Record<ChargeCategory, string[]> = {
  * do today; see CHARGE_PATTERNS's comment). Most severe first, purely
  * for stability. */
 const CATEGORY_ORDER: ChargeCategory[] = ['interest', 'late', 'annual-fee'];
+
+/** A GST line starts with it ("IGST ON ANNUAL FEE", "IGST-VPS…-RATE 18.0",
+ * "CGST"): the tax on a charge. classifyCharge still files it with the
+ * charge it names (a late fee's GST exists because of the late fee), but
+ * Insights shows it as its own figure and a fee label leaves it out. A fee
+ * that merely mentions it ("ANNUAL FEE (INCL GST)") is the fee. */
+export const GST_LINE = /^[^A-Z]*[CSI]?GST\b/i;
+
+/** A one-time fee for opening the card: a card cost, so it counts in the
+ * annual-fee total, but it says nothing about what the card charges a year. */
+const JOINING_FEE = /joining fee/i;
 
 /** Which charge category `payee` belongs to, or null if it isn't a
  * tracked charge line at all (an ordinary purchase, a bill payment, a
@@ -133,6 +145,46 @@ export function annualFeeNet(
     return ageInDays >= 0 && ageInDays <= 365;
   });
   return chargeTotals(inWindow)['annual-fee'];
+}
+
+/**
+ * The fee label to fill in after an import, or undefined to leave the card
+ * as it is. Only an unset label is filled: a card marked lifetime free or
+ * first year free keeps its label, so a fee charged on it still raises the
+ * discrepancy note rather than quietly rewriting what the card promised.
+ *
+ * Filled only while the trailing year's fee is still owed (annualFeeNet > 0,
+ * so a reversed fee fills nothing), with the latest renewal charge in that
+ * year: one year's fee, not a sum, which two renewals a few days under a
+ * year apart would double. A joining fee alone fills nothing.
+ */
+export function autoFeeLabel(
+  label: CardRecord['feeLabel'],
+  transactions: { payee: string; amount: number; dateISO: string }[],
+  todayISO: string,
+): CardRecord['feeLabel'] {
+  if (label !== undefined || annualFeeNet(transactions, todayISO) <= 0) {
+    return undefined;
+  }
+  const renewals = transactions.filter((txn) => {
+    const ageInDays = daysBetweenISO(txn.dateISO, todayISO);
+    return (
+      txn.amount < 0 &&
+      ageInDays >= 0 &&
+      ageInDays <= 365 &&
+      classifyCharge(txn.payee) === 'annual-fee' &&
+      !GST_LINE.test(txn.payee) &&
+      !JOINING_FEE.test(txn.payee)
+    );
+  });
+  const latest = renewals.reduce<(typeof renewals)[number] | undefined>(
+    (best, txn) =>
+      best === undefined || txn.dateISO > best.dateISO ? txn : best,
+    undefined,
+  );
+  return latest === undefined
+    ? undefined
+    : { type: 'AMOUNT', amount: -latest.amount };
 }
 
 /**

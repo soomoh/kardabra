@@ -18,6 +18,8 @@ import type {
 } from '../db/schema';
 import type { Sealed } from '../lib/secretBox';
 import {
+  getCard,
+  getTransactionsForCard,
   putCard,
   removeMatchingTransactions,
   putPdfPassword,
@@ -26,7 +28,8 @@ import {
   recomputeCardSpends,
 } from '../db/db';
 import { confirmedIssuer } from '../lib/bankDetect';
-import { cycleDueDateISO, isValidDueDay } from '../lib/dates';
+import { autoFeeLabel, classifyCharge } from '../lib/charges';
+import { cycleDueDateISO, isValidDueDay, todayISO } from '../lib/dates';
 import { netSpend, identifyPaymentIndices } from '../lib/spend';
 import { cardIdKey, statementFingerprint, transactionIds } from '../lib/txnId';
 import {
@@ -144,6 +147,7 @@ export async function commitImport(
   db: IDBPDatabase<KardabraSchema>,
   outcomes: FileOutcome[],
   userInput: CommitUserInput,
+  today = todayISO(),
 ): Promise<CommitResult> {
   const result: CommitResult = {
     cardsCreated: 0,
@@ -165,6 +169,10 @@ export async function commitImport(
   // history", and would just be wasted work when several outcomes in one
   // batch touch the same card (e.g. three months' history for one card).
   const affectedCardIds = new Set<string>();
+  // Cards whose new statements charged an annual fee: only these get an
+  // unset fee label filled, so a label the user cleared stays clear until
+  // the bank charges again.
+  const feeCharged = new Set<string>();
 
   function dueDayFor(key: string): number | undefined {
     const day = userInput.dueDays.get(key);
@@ -299,6 +307,13 @@ export async function commitImport(
     const txnRecords = toTransactionRecords(statementId, card, parsed);
     await putStatementWithTransactions(db, statement, txnRecords);
     result.statementsWritten++;
+    if (
+      txnRecords.some(
+        (t) => t.amount < 0 && classifyCharge(t.payee) === 'annual-fee',
+      )
+    ) {
+      feeCharged.add(card.id);
+    }
     // Exports that also hold these rows (under another month) give them up,
     // so nothing is counted twice; their other rows stay. After the write,
     // so a failure can double count but never lose a row.
@@ -323,6 +338,16 @@ export async function commitImport(
   // of the order files were dropped in or duplicated across a batch.
   for (const cardId of affectedCardIds) {
     await recomputeCardSpends(db, cardId);
+  }
+  for (const cardId of feeCharged) {
+    const card = await getCard(db, cardId);
+    if (card === undefined) continue;
+    const feeLabel = autoFeeLabel(
+      card.feeLabel,
+      await getTransactionsForCard(db, cardId),
+      today,
+    );
+    if (feeLabel !== undefined) await putCard(db, { ...card, feeLabel });
   }
 
   return result;

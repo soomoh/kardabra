@@ -3,8 +3,64 @@ import {
   classifyCharge,
   chargeTotals,
   annualFeeNet,
+  autoFeeLabel,
   feeDiscrepancyNote,
 } from '../../src/lib/charges';
+
+describe('autoFeeLabel', () => {
+  const today = '2025-12-01';
+  const line = (dateISO: string, payee: string, amount: number) => ({
+    dateISO,
+    payee,
+    amount,
+  });
+
+  it('fills an unset label with one year’s fee, without its GST', () => {
+    const txns = [
+      line('2025-10-13', 'ANNUAL FEE', -499),
+      line('2025-10-13', 'IGST ON ANNUAL FEE', -89.82),
+    ];
+    expect(autoFeeLabel(undefined, txns, today)).toEqual({
+      type: 'AMOUNT',
+      amount: 499,
+    });
+  });
+
+  it('takes the latest renewal, not two renewals summed', () => {
+    // Under a year apart, so both sit in the trailing year
+    const txns = [
+      line('2024-12-05', 'RENEWAL MEMBERSHIP FEE', -499),
+      line('2025-11-30', 'RENEWAL MEMBERSHIP FEE', -999),
+    ];
+    expect(autoFeeLabel(undefined, txns, today)).toEqual({
+      type: 'AMOUNT',
+      amount: 999,
+    });
+  });
+
+  it('never changes a label the user set', () => {
+    const txns = [line('2025-10-13', 'ANNUAL FEE', -499)];
+    // A fee on a free card must still raise the discrepancy note
+    expect(autoFeeLabel({ type: 'LTF' }, txns, today)).toBeUndefined();
+    expect(autoFeeLabel({ type: 'FYF' }, txns, today)).toBeUndefined();
+    expect(
+      autoFeeLabel({ type: 'AMOUNT', amount: 999 }, txns, today),
+    ).toBeUndefined();
+  });
+
+  it('fills nothing for a reversed fee, a joining fee, or an old fee', () => {
+    const reversed = [
+      line('2025-10-13', 'ANNUAL FEE', -499),
+      line('2025-10-20', 'ANNUAL FEE REVERSAL', 499),
+    ];
+    expect(autoFeeLabel(undefined, reversed, today)).toBeUndefined();
+    const joining = [line('2025-10-13', 'JOINING FEE', -1000)];
+    expect(autoFeeLabel(undefined, joining, today)).toBeUndefined();
+    const old = [line('2024-11-30', 'ANNUAL FEE', -499)];
+    expect(autoFeeLabel(undefined, old, today)).toBeUndefined();
+    expect(autoFeeLabel(undefined, [], today)).toBeUndefined();
+  });
+});
 
 describe('feeDiscrepancyNote', () => {
   it('speaks only when a fee was charged against a free label', () => {

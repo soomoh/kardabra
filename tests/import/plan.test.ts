@@ -13,6 +13,7 @@ import {
   getAllCards,
   getAllStatements,
   getActionableCycleByCard,
+  putCard,
   setCyclePaid,
 } from '../../src/db/db';
 import { StatementError, type ParsedStatement } from '../../src/parser';
@@ -317,5 +318,97 @@ describe('commitImport — writes, and preserves user facts across re-import', (
     const cycle = await getActionableCycleByCard(db, card.id);
     expect(cycle?.paidAt).toBe('2025-11-01T00:00:00.000Z');
     db.close();
+  });
+
+  describe('annual fee label', () => {
+    const withFee = (
+      fileName: string,
+      statementDateISO: string,
+      payee: string,
+      amount: number,
+    ) =>
+      parsed({
+        fileName,
+        last4: '4321',
+        summary: { statementDateISO, paymentDueDateISO: '2025-11-02' },
+        transactions: [{ dateISO: statementDateISO, payee, amount }],
+      });
+    const today = '2025-12-01';
+
+    it('fills an unset label from an annual fee the import brought', async () => {
+      const db = await openKardabraDb();
+      await commitImport(
+        db,
+        planImport(
+          [ok(withFee('oct.csv', '2025-10-13', 'ANNUAL FEE', -499))],
+          [],
+          [],
+        ),
+        input,
+        today,
+      );
+      const [card] = await getAllCards(db);
+      expect(card.feeLabel).toEqual({ type: 'AMOUNT', amount: 499 });
+      db.close();
+    });
+
+    it('keeps a lifetime-free label, so the fee still raises the note', async () => {
+      const db = await openKardabraDb();
+      await commitImport(
+        db,
+        planImport([ok(withPayment)], [], []),
+        input,
+        today,
+      );
+      const [card] = await getAllCards(db);
+      await putCard(db, { ...card, feeLabel: { type: 'LTF' } });
+      const next = withFee('nov.csv', '2025-11-13', 'ANNUAL FEE', -499);
+      await commitImport(
+        db,
+        planImport(
+          [ok(next)],
+          await getAllCards(db),
+          await getAllStatements(db),
+        ),
+        input,
+        today,
+      );
+      const [after] = await getAllCards(db);
+      expect(after.feeLabel).toEqual({ type: 'LTF' });
+      db.close();
+    });
+
+    it('leaves the label unset when the fee was reversed', async () => {
+      const db = await openKardabraDb();
+      const fee = withFee('oct.csv', '2025-10-13', 'ANNUAL FEE', -499);
+      const reversed = parsed({
+        ...fee,
+        transactions: [
+          ...fee.transactions,
+          { dateISO: '2025-10-14', payee: 'ANNUAL FEE REVERSAL', amount: 499 },
+        ],
+      });
+      await commitImport(db, planImport([ok(reversed)], [], []), input, today);
+      const [card] = await getAllCards(db);
+      expect(card.feeLabel).toBeUndefined();
+      db.close();
+    });
+
+    it('ignores a fee older than a year', async () => {
+      const db = await openKardabraDb();
+      await commitImport(
+        db,
+        planImport(
+          [ok(withFee('oct.csv', '2025-10-13', 'ANNUAL FEE', -499))],
+          [],
+          [],
+        ),
+        input,
+        '2026-12-01',
+      );
+      const [card] = await getAllCards(db);
+      expect(card.feeLabel).toBeUndefined();
+      db.close();
+    });
   });
 });

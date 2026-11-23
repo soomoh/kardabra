@@ -19,7 +19,7 @@ import type {
 } from '../db/schema';
 import { addDaysISO, previousPeriod } from './dates';
 import { transactionKind, type TransactionKind } from './kind';
-import { classifyCharge } from './charges';
+import { classifyCharge, GST_LINE } from './charges';
 import {
   nameMerchants,
   type MerchantRename,
@@ -433,11 +433,6 @@ export interface CardCosts {
    * parts, not the card's own cost. */
   lines: Record<CostKind, LabelledTxn[]>;
 }
-
-/** A GST line starts with it ("IGST ON LATE FEE", "IGST-VPS…-RATE 18.0",
- * "CGST"); a fee that merely mentions it ("ANNUAL FEE (INCL GST)") is the
- * fee. */
-const GST_LINE = /^[^A-Z]*[CSI]?GST\b/i;
 
 function costKind(txn: LabelledTxn): CostKind | null {
   switch (txn.kind) {
