@@ -251,15 +251,21 @@ export function periodsBetween(older: string, newer: string): string[] {
   return out;
 }
 
+/** `iso` moved by `days` calendar days, either way ('2026-12-31', 1 →
+ * '2027-01-01'; '2026-03-01', -1 → '2026-02-28'). */
+export function addDaysISO(iso: string, days: number): string {
+  const { year, month, day } = partsFromISO(iso);
+  const moved = new Date(Date.UTC(year, month - 1, day + days));
+  return isoFromParts(
+    moved.getUTCFullYear(),
+    moved.getUTCMonth() + 1,
+    moved.getUTCDate(),
+  );
+}
+
 /** The calendar day after `iso` ('2026-12-31' → '2027-01-01'). */
 export function nextDayISO(iso: string): string {
-  const { year, month, day } = partsFromISO(iso);
-  const next = new Date(Date.UTC(year, month - 1, day + 1));
-  return isoFromParts(
-    next.getUTCFullYear(),
-    next.getUTCMonth() + 1,
-    next.getUTCDate(),
-  );
+  return addDaysISO(iso, 1);
 }
 
 /** English ordinal for a day of the month: 1st, 2nd, 3rd, 11th, 22nd. */

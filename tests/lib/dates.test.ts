@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  addDaysISO,
   clampDayToMonth,
   nextDueDateISO,
   nextDueDateWithGraceISO,
@@ -163,5 +164,17 @@ describe('previousPeriod / periodsBetween', () => {
       '2026-01',
     ]);
     expect(periodsBetween('2025-07', '2025-08')).toEqual([]);
+  });
+});
+
+describe('addDaysISO', () => {
+  it.each([
+    ['2026-03-10', -7, '2026-03-03'],
+    ['2026-03-03', -7, '2026-02-24'],
+    ['2024-03-01', -1, '2024-02-29'], // leap year
+    ['2026-12-31', 1, '2027-01-01'],
+    ['2026-01-05', 0, '2026-01-05'],
+  ])('%s %+d → %s', (iso, days, expected) => {
+    expect(addDaysISO(iso, days)).toBe(expected);
   });
 });

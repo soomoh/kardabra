@@ -17,7 +17,7 @@ import type {
   StatementRecord,
   TransactionRecord,
 } from '../db/schema';
-import { previousPeriod } from './dates';
+import { addDaysISO, previousPeriod } from './dates';
 import { transactionKind, type TransactionKind } from './kind';
 import { classifyCharge } from './charges';
 import { cleanMerchant, merchantKey } from './merchant';
@@ -526,12 +526,22 @@ export interface DuplicateGroup {
   count: number;
 }
 
+/** How long after a charge its reversal can post: a refund this many days
+ * later, or fewer, can be the one that cancels it. */
+const REVERSAL_DAYS = 7;
+
 /** Purchases on the same card, from the same merchant, for the same amount,
  * on the same day. Two coffees in a morning look the same, so these are
- * "possible" duplicates for the user to check, never removed. */
+ * "possible" duplicates for the user to check, never removed. A refund of
+ * that amount from that merchant, on the day or up to a week later, cancels
+ * one of them (a charge taken twice and reversed once is one charge); it
+ * goes to the nearest charge day before it, and a group is listed only while
+ * two or more charges remain. */
 export function possibleDuplicates(txns: LabelledTxn[]): DuplicateGroup[] {
   const groups = new Map<string, DuplicateGroup>();
+  const refunds: LabelledTxn[] = [];
   for (const txn of txns) {
+    if (txn.kind === 'refund') refunds.push(txn);
     if (txn.kind !== 'purchase') continue;
     const key = [txn.cardId, txn.merchantKey, txn.dateISO, txn.amount].join(
       '|',
@@ -545,6 +555,19 @@ export function possibleDuplicates(txns: LabelledTxn[]): DuplicateGroup[] {
     };
     group.count += 1;
     groups.set(key, group);
+  }
+  // In date order, so an earlier refund claims its charge first.
+  refunds.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
+  for (const refund of refunds) {
+    let nearest: DuplicateGroup | undefined;
+    for (let back = 0; back <= REVERSAL_DAYS && nearest === undefined; back++) {
+      const dateISO = addDaysISO(refund.dateISO, -back);
+      const group = groups.get(
+        [refund.cardId, refund.merchantKey, dateISO, -refund.amount].join('|'),
+      );
+      if (group !== undefined && group.count > 0) nearest = group;
+    }
+    if (nearest !== undefined) nearest.count -= 1;
   }
   return [...groups.values()]
     .filter((g) => g.count > 1)

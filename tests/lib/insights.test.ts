@@ -558,6 +558,91 @@ describe('possibleDuplicates', () => {
       },
     ]);
   });
+
+  test('a refund of the same amount cancels one of the charges', () => {
+    const txns = labelTransactions(
+      store({
+        a: {
+          months: {
+            '2026-01': [
+              [1, 'PAYMENT RECEIVED THANK YOU', 20000],
+              // Charged twice, reversed once on the day: one charge.
+              [1, 'EMI CAS*SwiggyBengaluru', -5066],
+              [1, 'EMI CAS*SwiggyBengaluru', -5066],
+              [1, 'CAS*SwiggyBengaluru', 5066],
+            ],
+          },
+        },
+      }),
+    );
+    expect(txns.map((t) => [t.merchantKey, t.kind])).toEqual([
+      ['PAYMENTRECEIVEDTHANKYOU', 'payment'],
+      ['SWIGGY', 'purchase'],
+      ['SWIGGY', 'purchase'],
+      ['SWIGGY', 'refund'],
+    ]);
+    expect(possibleDuplicates(txns)).toEqual([]);
+  });
+
+  test('a reversal up to 7 days later counts; 8 days later does not', () => {
+    const txns = labelTransactions(
+      store({
+        a: {
+          months: {
+            '2026-03': [
+              [1, 'PAYMENT RECEIVED THANK YOU', 20000],
+              [3, 'COOL COFFEE', -300],
+              [3, 'COOL COFFEE', -300],
+              [10, 'COOL COFFEE', 300], // 7 days on: cancels one
+              [12, 'BOOKSHOP', -500],
+              [12, 'BOOKSHOP', -500],
+              [20, 'BOOKSHOP', 500], // 8 days on: a separate refund
+              [14, 'TEA HOUSE', -90],
+              [14, 'TEA HOUSE', -90],
+              [14, 'TEA HOUSE', -90],
+              [14, 'TEA HOUSE', 90], // three charges, one reversal: still two
+              [13, 'TEA HOUSE', 90], // before the charges: not a reversal
+              [28, 'NOODLE BAR', -400],
+              [28, 'NOODLE BAR', -400],
+              [29, 'NOODLE BAR', 401], // another amount
+              [29, 'NOODLE PLACE', 400], // another merchant
+              [30, 'GYM', -900],
+              [30, 'GYM', -900],
+            ],
+            // Across the month end: still within 7 days
+            '2026-04': [
+              [1, 'PAYMENT RECEIVED THANK YOU', 5000],
+              [2, 'GYM', 900],
+            ],
+          },
+        },
+        b: { months: { '2026-03': [[29, 'NOODLE BAR', 400]] } }, // other card
+      }),
+    );
+    expect(possibleDuplicates(txns)).toEqual([
+      {
+        cardId: 'a',
+        merchant: 'NOODLE BAR',
+        dateISO: '2026-03-28',
+        amount: 400,
+        count: 2,
+      },
+      {
+        cardId: 'a',
+        merchant: 'TEA HOUSE',
+        dateISO: '2026-03-14',
+        amount: 90,
+        count: 2,
+      },
+      {
+        cardId: 'a',
+        merchant: 'BOOKSHOP',
+        dateISO: '2026-03-12',
+        amount: 500,
+        count: 2,
+      },
+    ]);
+  });
 });
 
 describe('buildInsights', () => {
