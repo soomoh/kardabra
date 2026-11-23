@@ -26,12 +26,21 @@ test('insights answer from the statements, over the chosen months', async ({
     'Jul 2025 to Oct 2025, from 4 statements.',
   );
 
-  const where = page.getByRole('table', { name: 'Top merchants' });
+  const where = page.getByRole('group', { name: 'Top merchants' });
+  const merchant = (name: RegExp) =>
+    where.locator('.cost-row').filter({ hasText: name });
   // Amazon's ₹200 refund comes off its purchases.
-  await expect(where.getByRole('row').nth(1)).toContainText('Croma');
-  await expect(where.getByRole('row', { name: /Amazon/ })).toContainText(
-    '₹10,000.00',
+  await expect(where.locator('.cost-row').first()).toContainText('Croma');
+  await expect(merchant(/^Amazon/)).toContainText(
+    /^Amazon \(3 purchases, 1 refund\).*₹10,000\.00/,
   );
+  // A merchant opens to the lines behind its total, refund included.
+  await merchant(/^Amazon/)
+    .locator('summary')
+    .click();
+  const amazonLines = page.getByRole('table', { name: 'Amazon: lines' });
+  await expect(amazonLines.getByRole('row')).toHaveCount(5); // header + 4
+  await expect(amazonLines).toContainText('+₹200.00');
 
   const subs = page.getByRole('table', { name: 'Subscriptions' });
   await expect(subs.getByRole('row', { name: /Netflix/ })).toContainText(
@@ -40,11 +49,11 @@ test('insights answer from the statements, over the chosen months', async ({
   await expect(page.getByText('a month goes to 2 monthly')).toBeVisible();
 
   // Two spellings of one shop's web address are one merchant.
-  await expect(where.getByRole('row', { name: /BigBasket/ })).toContainText(
-    /^BigBasket\s*2/,
+  await expect(merchant(/^BigBasket/)).toContainText(
+    /^BigBasket \(2 purchases\)/,
   );
 
-  const costs = page.locator('.cost-list');
+  const costs = page.locator('section[aria-labelledby="costs-heading"]');
   const row = (label: RegExp) =>
     costs.locator('.cost-row').filter({ hasText: label });
   await expect(row(/^Annual fee/)).toContainText('₹499.00');
@@ -76,9 +85,7 @@ test('insights answer from the statements, over the chosen months', async ({
   await expect(page.locator('.insights-range')).toHaveText(
     'Aug 2025 to Oct 2025, from 3 statements.',
   );
-  await expect(where.getByRole('row', { name: /Amazon/ })).toContainText(
-    '₹5,500.00',
-  );
+  await expect(merchant(/^Amazon/)).toContainText('₹5,500.00');
 });
 
 test('the card page links to its own insights, and Back returns', async ({

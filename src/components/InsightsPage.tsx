@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
 import { getStoredData } from '../db/db';
@@ -223,39 +223,35 @@ function InsightSections({
             </p>
             {where.merchants.length > 0 && (
               <>
-                <h3>Top merchants</h3>
-                <div className="table-scroll">
-                  <table className="txn-table" aria-label="Top merchants">
-                    <thead>
-                      <tr>
-                        <th scope="col">Merchant</th>
-                        <th scope="col" className="num">
-                          Purchases
-                        </th>
-                        <th scope="col" className="num">
-                          Amount
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {where.merchants.map((m) => (
-                        <tr key={m.merchant}>
-                          <td>
-                            {m.merchant}
-                            <span className="share-bar" aria-hidden="true">
-                              <span
-                                style={{
-                                  width: `${Math.max(1, (m.net / where.merchants[0].net) * 100)}%`,
-                                }}
-                              />
-                            </span>
-                          </td>
-                          <td className="num">{m.purchases}</td>
-                          <td className="num amount">{formatINR(m.net)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <h3 id="merchants-heading">Top merchants</h3>
+                <div
+                  className="cost-list"
+                  role="group"
+                  aria-labelledby="merchants-heading"
+                >
+                  {where.merchants.map((m) => (
+                    <LinesRow
+                      key={m.merchant}
+                      label={m.merchant}
+                      count={merchantCount(
+                        m.purchases,
+                        m.lines.length - m.purchases,
+                      )}
+                      figure={
+                        <span className="amount">{formatINR(m.net)}</span>
+                      }
+                      lines={m.lines}
+                      cardName={cardName}
+                    >
+                      <span className="share-bar" aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${Math.max(1, (m.net / where.merchants[0].net) * 100)}%`,
+                          }}
+                        />
+                      </span>
+                    </LinesRow>
+                  ))}
                 </div>
               </>
             )}
@@ -504,15 +500,44 @@ function CostRow({
     );
   }
   return (
+    <LinesRow
+      label={label}
+      count={plural(lines.length, 'line')}
+      figure={figure}
+      lines={lines}
+      cardName={cardName}
+    />
+  );
+}
+
+/** A figure that opens to the statement lines behind it, as printed, so a
+ * total can be checked line by line (a fee to the line that charged it, a
+ * merchant's total to its purchases and refunds). Money out shows plain,
+ * money back with a + in green. */
+function LinesRow({
+  label,
+  count,
+  figure,
+  lines,
+  cardName,
+  children,
+}: {
+  label: string;
+  count: string;
+  figure: ReactNode;
+  lines: LabelledTxn[];
+  cardName: ((id: string) => string) | null;
+  /** A full-width line under the row (a share bar). */
+  children?: ReactNode;
+}) {
+  return (
     <details className="cost-row">
       <summary>
         <span>
-          {label}{' '}
-          <span className="muted cost-count">
-            ({plural(lines.length, 'line')})
-          </span>
+          {label} <span className="muted cost-count">({count})</span>
         </span>
         {figure}
+        {children}
       </summary>
       <div className="table-scroll">
         <table className="txn-table" aria-label={`${label}: lines`}>
@@ -542,6 +567,13 @@ function CostRow({
       </div>
     </details>
   );
+}
+
+/** "3 purchases", or "3 purchases, 1 refund" when refunds are among the
+ * lines, so the count matches the list it opens to. */
+function merchantCount(purchases: number, refunds: number): string {
+  const count = plural(purchases, 'purchase');
+  return refunds > 0 ? `${count}, ${plural(refunds, 'refund')}` : count;
 }
 
 /** Judged on the shown percentage, so "30%" never gets the "more than

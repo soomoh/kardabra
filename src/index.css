@@ -1439,7 +1439,7 @@ h1[tabindex='-1']:focus {
   margin: calc(-1 * var(--space-xs)) 0 var(--space-sm);
   font-size: var(--text-sm);
 }
-/* The merchant's bar sits under its name; numbers line up with the name. */
+/* A cell with a second line ("Up from …") keeps the row's first lines level. */
 .insights-page .txn-table td {
   vertical-align: top;
 }
@@ -1515,6 +1515,7 @@ h1[tabindex='-1']:focus {
 }
 /* The label wraps as text; the chevron sits in its own gutter. */
 .cost-row > summary > span:first-child {
+  flex: 1;
   position: relative;
   padding-left: var(--space-md);
 }
@@ -1535,6 +1536,16 @@ h1[tabindex='-1']:focus {
 }
 .cost-row > summary:hover .cost-count {
   color: var(--ink);
+}
+/* A share bar under the row spans it, so every row's track is the same
+   length whatever the width of its amount. */
+.cost-row > summary:has(> .share-bar) {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.cost-row > summary > .share-bar {
+  flex-basis: calc(100% - var(--space-md));
+  margin-left: var(--space-md);
 }
 .cost-row .table-scroll {
   margin: 0 0 var(--space-sm) var(--space-md);

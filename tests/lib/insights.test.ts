@@ -162,12 +162,115 @@ describe('whereItWent', () => {
       }),
     );
     const result = whereItWent(txns);
-    expect(result.merchants).toEqual([
-      { merchant: 'COOL COFFEE', net: 900, purchases: 2 },
-      { merchant: 'Amazon', net: 500, purchases: 1 },
+    expect(
+      result.merchants.map(({ lines, ...m }) => ({
+        ...m,
+        lines: lines.map((t) => [t.dateISO, t.payee, t.amount]),
+      })),
+    ).toEqual([
+      {
+        merchant: 'COOL COFFEE',
+        net: 900,
+        purchases: 2,
+        lines: [
+          ['2026-03-03', 'COOL COFFEE BANGALORE', -400],
+          ['2026-03-02', 'COOL COFFEE BANGALORE', -500],
+        ],
+      },
+      {
+        merchant: 'Amazon',
+        net: 500,
+        purchases: 1,
+        lines: [
+          ['2026-03-04', 'AMAZON PAY INDIA', 2500], // the refund behind the net
+          ['2026-03-01', 'AMAZON PAY INDIA', -3000],
+        ],
+      },
     ]);
     expect(result.total).toBe(1400);
     expect(result.largest.map((t) => -t.amount)).toEqual([3000, 500, 400, 200]);
+  });
+
+  test('spellings that start the same merchant name are one merchant', () => {
+    const rows: [number, string, number][] = [
+      [1, 'PAYMENT RECEIVED THANK YOU', 90000],
+      // Every Tata Payments spelling seen so far
+      [2, 'TataPayments Limited', -100],
+      [2, 'TataPayments Limited', -100],
+      [3, 'TATA PAYMENTS LIMITEDBMUMBAI', -100],
+      [3, 'TATA PAYMENTS LIMITEDMUMBAI', -100],
+      [4, 'TataPaymentsLimitedMumbai', -100],
+      [4, 'TATAPAYMENTS', -100],
+      [5, 'TATA PAYMENTS PVT LTD', -100],
+      [5, 'TATA PAYMENTS PR', -100],
+      // Cut short by the bank's fixed-width field
+      [6, 'ORBGEN TECHNOLOGIES', -200],
+      [6, 'ORBGEN TECHNOLOGIES PR', -200],
+      // A stem under 8 letters joins nothing
+      [7, 'ACME LTD', -300],
+      [7, 'ACME STORES', -300],
+      [8, 'TATA CLIQ', -400],
+      [8, 'TATA NEU BROADBAND', -400],
+      // Brands don't join by prefix: the brand table groups them
+      [9, 'RELIANCE', -500],
+      [9, 'RELIANCE DIGITAL', -500],
+      [9, 'RELIANCE TRENDS', -500],
+    ];
+    const txns = labelTransactions(
+      store({ a: { months: { '2026-03': rows } } }),
+    );
+    const names = Object.fromEntries(
+      txns.map((t) => [t.payee, `${t.merchant} / ${t.merchantKey}`]),
+    );
+    expect(names).toEqual({
+      'PAYMENT RECEIVED THANK YOU':
+        'PAYMENT RECEIVED THANK YOU / PAYMENTRECEIVEDTHANKYOU',
+      'TataPayments Limited': 'TataPayments Limited / TATAPAYMENTS',
+      'TATA PAYMENTS LIMITEDBMUMBAI': 'TataPayments Limited / TATAPAYMENTS',
+      'TATA PAYMENTS LIMITEDMUMBAI': 'TataPayments Limited / TATAPAYMENTS',
+      TataPaymentsLimitedMumbai: 'TataPayments Limited / TATAPAYMENTS',
+      TATAPAYMENTS: 'TataPayments Limited / TATAPAYMENTS',
+      'TATA PAYMENTS PVT LTD': 'TataPayments Limited / TATAPAYMENTS',
+      'TATA PAYMENTS PR': 'TataPayments Limited / TATAPAYMENTS',
+      'ORBGEN TECHNOLOGIES': 'ORBGEN TECHNOLOGIES / ORBGENTECHNOLOGIES',
+      'ORBGEN TECHNOLOGIES PR': 'ORBGEN TECHNOLOGIES / ORBGENTECHNOLOGIES',
+      'ACME LTD': 'ACME LTD / ACME',
+      'ACME STORES': 'ACME STORES / ACMESTORES',
+      'TATA CLIQ': 'Tata CLiQ / TATACLIQ',
+      'TATA NEU BROADBAND': 'TATA NEU BROADBAND / TATANEUBROADBAND',
+      RELIANCE: 'RELIANCE / RELIANCE',
+      'RELIANCE DIGITAL': 'Reliance Digital / RELIANCEDIGITAL',
+      'RELIANCE TRENDS': 'Reliance Trends / RELIANCETRENDS',
+    });
+  });
+
+  test('grouping spans cards, and the stem’s spelling names the group', () => {
+    const txns = labelTransactions(
+      store({
+        a: {
+          months: {
+            '2026-03': [
+              [1, 'PAYMENT RECEIVED THANK YOU', 9000],
+              [2, 'ORBGEN TECHNOLOGIES PR', -200],
+              [2, 'ORBGEN TECHNOLOGIES PR', -200],
+            ],
+          },
+        },
+        b: {
+          months: { '2026-03': [[4, 'ORBGEN TECHNOLOGIES', -200]] },
+        },
+      }),
+    );
+    expect(
+      txns.filter((t) => t.kind === 'purchase').map((t) => t.merchant),
+    ).toEqual([
+      'ORBGEN TECHNOLOGIES',
+      'ORBGEN TECHNOLOGIES',
+      'ORBGEN TECHNOLOGIES',
+    ]);
+    // Merged spellings are one merchant to the other insights too.
+    expect(whereItWent(txns).merchants).toHaveLength(1);
+    expect(possibleDuplicates(txns)).toHaveLength(1);
   });
 
   test('a merchant with only refunds is not a top merchant', () => {

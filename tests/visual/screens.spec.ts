@@ -162,8 +162,14 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await page.getByRole('button', { name: 'Import 4 statements' }).click();
         await expect(page.locator('.card-grid').first()).toBeVisible();
         await page.getByRole('link', { name: 'Insights', exact: true }).click();
-        await expect(page.locator('.cost-list')).toBeVisible();
+        await expect(page.locator('.cost-list').first()).toBeVisible();
+        // The top merchant, open to its lines.
         await page.locator('.cost-row summary').first().click();
+        // And a cost, open to its lines.
+        await page
+          .locator('section[aria-labelledby="costs-heading"] summary')
+          .first()
+          .click();
         await shot(page, 'insights');
       });
     });

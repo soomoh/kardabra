@@ -306,6 +306,13 @@ export function merchantKey(name: string): string {
   return key === '' ? upper.replace(/[^\p{L}\p{N}]/gu, '') || upper : key;
 }
 
+const BRAND_NAMES = new Set(BRANDS.map((brand) => brand.name));
+
+/** Is this `cleanMerchant` result a known brand's display name? */
+export function isBrand(name: string): boolean {
+  return BRAND_NAMES.has(name);
+}
+
 /** The merchant name for a raw payee: a known brand's display name when one
  * matches, otherwise `stripPayee`'s cleaned text. */
 export function cleanMerchant(raw: string): string {

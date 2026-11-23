@@ -20,7 +20,7 @@ import type {
 import { addDaysISO, previousPeriod } from './dates';
 import { transactionKind, type TransactionKind } from './kind';
 import { classifyCharge } from './charges';
-import { cleanMerchant, merchantKey } from './merchant';
+import { cleanMerchant, isBrand, merchantKey } from './merchant';
 import { walkCardPayments } from './spend';
 
 export interface InsightsInput {
@@ -96,15 +96,58 @@ export function labelTransactions(input: InsightsInput): LabelledTxn[] {
   return withGroupNames(out);
 }
 
-/** Gives every transaction of a merchant the group's most common spelling;
- * on a tie, the one with more spaces (words read better than "TATAPAYMENTS"). */
-function withGroupNames(txns: LabelledTxn[]): LabelledTxn[] {
-  const counts = new Map<string, Map<string, number>>();
+/** A key this long or longer can stand for the keys it starts; a shorter
+ * one ("TATA") is too likely a shared first word. */
+const MIN_STEM = 8;
+
+/**
+ * Each merchant key mapped to its group's key: the shortest key in the data,
+ * MIN_STEM characters or more, that it starts with. Banks print the name in
+ * a fixed-width field, so variation lands at the end ("ORBGEN TECHNOLOGIES
+ * PR", "TATA PAYMENTS LIMITEDBMUMBAI") while the start stays put. Known
+ * brands are left out on both sides: the brand table already groups their
+ * spellings, and a bare "RELIANCE" must not take Reliance Digital and
+ * Reliance Trends together. Two keys of one name that share only a stem
+ * nobody printed alone stay apart.
+ */
+function groupKeys(txns: LabelledTxn[]): Map<string, string> {
+  const stems = new Set<string>();
   for (const txn of txns) {
+    if (!isBrand(txn.merchant) && txn.merchantKey.length >= MIN_STEM)
+      stems.add(txn.merchantKey);
+  }
+  const groups = new Map<string, string>();
+  for (const key of stems) {
+    let group = key;
+    for (let len = MIN_STEM; len < key.length; len++) {
+      if (stems.has(key.slice(0, len))) {
+        group = key.slice(0, len);
+        break;
+      }
+    }
+    groups.set(key, group);
+  }
+  return groups;
+}
+
+/** Puts every transaction in its merchant's group (`groupKeys`) and gives it
+ * the group's name: the most common spelling of the group's own key (the
+ * shortest, so the one with the least noise on its end); on a tie, the one
+ * with more spaces (words read better than "TATAPAYMENTS"). */
+function withGroupNames(labelled: LabelledTxn[]): LabelledTxn[] {
+  const groups = groupKeys(labelled);
+  const txns = labelled.map((txn) => ({
+    ...txn,
+    merchantKey: groups.get(txn.merchantKey) ?? txn.merchantKey,
+  }));
+  const counts = new Map<string, Map<string, number>>();
+  txns.forEach((txn, i) => {
+    // The group's key is always some line's own key, so it always has a name.
+    if (labelled[i].merchantKey !== txn.merchantKey) return;
     const names = counts.get(txn.merchantKey) ?? new Map<string, number>();
     names.set(txn.merchant, (names.get(txn.merchant) ?? 0) + 1);
     counts.set(txn.merchantKey, names);
-  }
+  });
   const spaces = (name: string) => name.split(' ').length;
   const chosen = new Map<string, string>();
   for (const [key, names] of counts) {
@@ -167,6 +210,8 @@ export interface MerchantTotal {
   /** Purchases minus that merchant's refunds (positive = money out). */
   net: number;
   purchases: number; // number of purchase lines
+  /** The purchase and refund lines behind `net`, newest first. */
+  lines: LabelledTxn[];
 }
 
 export interface WhereItWent {
@@ -192,8 +237,10 @@ export function whereItWent(
       merchant: txn.merchant,
       net: 0,
       purchases: 0,
+      lines: [],
     };
     entry.net -= txn.amount;
+    entry.lines.push(txn);
     total -= txn.amount;
     if (txn.kind === 'purchase') {
       entry.purchases += 1;
@@ -204,7 +251,11 @@ export function whereItWent(
     byMerchant.set(txn.merchantKey, entry);
   }
   const merchants = [...byMerchant.values()]
-    .map((m) => ({ ...m, net: paise(m.net) }))
+    .map((m) => ({
+      ...m,
+      net: paise(m.net),
+      lines: m.lines.sort((a, b) => b.dateISO.localeCompare(a.dateISO)),
+    }))
     .filter((m) => m.net > 0 && m.purchases > 0)
     .sort((a, b) => b.net - a.net || a.merchant.localeCompare(b.merchant))
     .slice(0, limits.merchants);
