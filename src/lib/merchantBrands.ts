@@ -115,7 +115,9 @@ export const BRANDS: Brand[] = [
   b('OpenAI', /OPENAI/),
   b('Anthropic', /ANTHROPIC/),
 
-  // Shopping
+  // Shopping. Gyftr (HDFC SmartBuy gift vouchers) first, so a voucher line
+  // naming a shop below ("GYFTR AMAZON") is Gyftr: the money went there.
+  b('Gyftr', /GYFTR/),
   b('Amazon', /AMAZON/),
   b('Flipkart', /FLIPKART/),
   b('Myntra', /MYNTRA/),

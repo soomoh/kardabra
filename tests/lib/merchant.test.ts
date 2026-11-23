@@ -149,10 +149,29 @@ describe('cleanMerchant: brands', () => {
           'TATAPAYMENTS',
           'TataPaymentsLimited',
           'TATA PAYMENTS PVT LTD',
+          // A short city glued in capitals after the legal word
+          'TATA PAYMENTS LIMITEDMUMBAI',
+          'TataPayments Limited',
         ].map(key),
       ),
     ).toEqual(new Set(['TATAPAYMENTS']));
     expect(key('TATANEUBROADBAND')).not.toBe(key('TATAPAYMENTS'));
+    expect(key('TATA CLIQ')).not.toBe(key('TATA PAYMENTS LIMITEDMUMBAI'));
+    // A legal word glued to the end of another word is that word's ending
+    expect(stripPayee('JIO UNLIMITEDPUNE')).toBe('JIO UNLIMITEDPUNE');
+    // Without a legal word in front, a short glued city stays (PUNE could
+    // be a word's end)
+    expect(cleanMerchant('COOL STOREPUNE')).toBe('COOL STOREPUNE');
+    // Gift vouchers bought through SmartBuy, however the line is spelled
+    expect(
+      new Set(
+        [
+          'GYFTR VIA SMARTBUY',
+          'GYFTR COM VIA SMARTBUY',
+          'GYFTR SMARTBUY ONE',
+        ].map(cleanMerchant),
+      ),
+    ).toEqual(new Set(['Gyftr']));
     expect(merchantKey('LIMITED')).toBe('LIMITED'); // never empty
     // A word's own ending is not a legal word
     expect(merchantKey('UNLIMITED')).toBe('UNLIMITED');

@@ -225,6 +225,23 @@ function splitGluedTail(word: string): string {
   return [head, ...tail].join(' ');
 }
 
+/** "LIMITEDMUMBAI", "LTDPUNE": a word that is a legal word with a city glued
+ * on in capitals. The legal word says a name ended there, so a city of any
+ * length splits off (MIN_GLUED_CITY guards only a bare glued city), and the
+ * legal word is left for `merchantKey` to drop. The legal word must start the
+ * word: glued to the end of another ("UNLIMITEDPUNE") it can't be told from
+ * that word's own ending. */
+const GLUED_LEGAL_CITY = new RegExp(
+  `^(LIMITED|LTD|PVT|PRIVATE)(${CITIES.join('|').replace(/ /g, '')})$`,
+);
+
+function splitGluedLegalCity(word: string): string {
+  if (word !== word.toUpperCase()) return word;
+  const match = GLUED_LEGAL_CITY.exec(word);
+  if (match === null) return word;
+  return `${match[1]} ${match[2]}`;
+}
+
 /** The payee with known noise removed, original case kept. Never empty:
  * when stripping would leave nothing, the collapsed raw text is returned. */
 export function stripPayee(raw: string): string {
@@ -233,7 +250,7 @@ export function stripPayee(raw: string): string {
     .trim()
     .replace(FOREIGN_AMOUNT_TAIL, '')
     .split(' ')
-    .map((word) => splitGluedTail(unwrapDomain(word)))
+    .map((word) => splitGluedLegalCity(splitGluedTail(unwrapDomain(word))))
     .join(' ');
   // Prefixes first: the UPI prefix holds a reference number, and once that
   // is cut out the prefix no longer looks like one.
