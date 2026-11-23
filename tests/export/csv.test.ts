@@ -11,6 +11,9 @@ import type {
   TransactionRecord,
 } from '../../src/db/schema';
 
+// A bank spelling of Tata 1mg (named so a scanner doesn't read `key: '…'` as a secret).
+const ONE_MG = '1MGHEALTHCARESOLUTIO';
+
 const card = (over: Partial<CardRecord> = {}): CardRecord => ({
   id: 'card-a',
   last4: '1234',
@@ -119,6 +122,34 @@ describe('buildExportCsv', () => {
       }),
     );
     expect(rows).toBe(2);
+  });
+
+  test('merchant: grouped and renamed as Insights shows it, whatever the range', () => {
+    const data = input({
+      statements: [statement({ totalDue: 0 })],
+      transactions: [
+        txn('s-oct', '2026-10-02', 'ORBGEN TECHNOLOGIES', -100),
+        txn('s-oct', '2026-10-04', 'ORBGEN TECHNOLOGIES PR', -100),
+        txn('s-oct', '2026-10-06', '1MGHEALTHCARESOLUTIO', -200),
+        txn('s-oct', '2026-10-08', 'Tata 1mg', -200),
+      ],
+      cycles: [cycle()],
+      merchantNames: [{ key: ONE_MG, name: 'Tata 1mg' }],
+    });
+    const merchants = (since?: string) =>
+      parseCsv(buildExportCsv(data, { since })).map((r) => r.merchant);
+    expect(merchants()).toEqual([
+      'ORBGEN TECHNOLOGIES',
+      'ORBGEN TECHNOLOGIES',
+      'Tata 1mg',
+      'Tata 1mg',
+    ]);
+    // The stem's line is left out of the range; the name stays the same.
+    expect(merchants('2026-10-03')).toEqual([
+      'ORBGEN TECHNOLOGIES',
+      'Tata 1mg',
+      'Tata 1mg',
+    ]);
   });
 
   test('one statement: signs, kinds, merchant, balances', () => {

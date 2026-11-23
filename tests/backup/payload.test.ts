@@ -19,7 +19,7 @@ describe('parseBackupPayload', () => {
     expect(parse(good())).toEqual({ ok: true, data: good() });
   });
 
-  it('accepts an empty backup', () => {
+  it('accepts an empty backup, with no merchant names (older backups)', () => {
     const empty = {
       createdAt: CREATED,
       cards: [],
@@ -27,7 +27,10 @@ describe('parseBackupPayload', () => {
       transactions: [],
       cycles: [],
     };
-    expect(parse(empty)).toEqual({ ok: true, data: empty });
+    expect(parse(empty)).toEqual({
+      ok: true,
+      data: { ...empty, merchantNames: [] },
+    });
   });
 
   it('drops unknown keys and never lets __proto__ through', () => {
@@ -52,6 +55,12 @@ describe('parseBackupPayload', () => {
     p.cards[0].nickname = 'n'.repeat(5000);
     p.transactions[0].payee = 'p'.repeat(20_000);
     p.statements[0].fileName = 'f'.repeat(2000);
+    expect(parse(p)).toEqual({ ok: true, data: p });
+  });
+
+  it('accepts a merchant name on the empty key (a blank description)', () => {
+    const p = good();
+    p.merchantNames.push({ key: '', name: 'Unknown shop' });
     expect(parse(p)).toEqual({ ok: true, data: p });
   });
 
@@ -234,6 +243,25 @@ describe('parseBackupPayload', () => {
         p.cycles[1].cardId = 'card-a';
       },
       'Bill 2 repeats another bill',
+    ],
+    [
+      'merchant names that are not a list',
+      (p) => ({ ...p, merchantNames: 'Corner shop' }),
+      'the list of merchant names is missing',
+    ],
+    [
+      'an empty merchant name',
+      (p) => {
+        p.merchantNames[0].name = '';
+      },
+      'Merchant name 1 has an empty name',
+    ],
+    [
+      'a merchant named twice',
+      (p) => {
+        p.merchantNames.push({ key: 'MERCHANT01', name: 'Shop' });
+      },
+      'Merchant name 2 repeats another',
     ],
   ];
 

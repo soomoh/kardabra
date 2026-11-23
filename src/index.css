@@ -1550,6 +1550,31 @@ h1[tabindex='-1']:focus {
 .cost-row .table-scroll {
   margin: 0 0 var(--space-sm) var(--space-md);
 }
+.merchant-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  margin: 0 0 var(--space-sm) var(--space-md);
+}
+.merchant-renames {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+.merchant-renames li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-xs);
+}
+.merchant-renames .bank-name {
+  overflow-wrap: anywhere;
+}
+.merchant-name-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+}
 .cost-count {
   font-size: var(--text-sm);
   white-space: nowrap;

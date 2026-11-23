@@ -28,7 +28,9 @@ import {
   putPdfPassword,
   putKeyIfAbsent,
   countStoredData,
+  deleteMerchantNames,
   eraseAllData,
+  putMerchantNames,
   inTransaction,
 } from '../../src/db/db';
 import type {
@@ -81,6 +83,7 @@ describe('openKardabraDb', () => {
         'cards',
         'cycles',
         'keys',
+        'merchantNames',
         'pdfPasswords',
         'settings',
         'statements',
@@ -178,6 +181,19 @@ describe('openKardabraDb', () => {
     expect(db.objectStoreNames.contains('pdfPasswords')).toBe(true);
     expect(db.objectStoreNames.contains('keys')).toBe(true);
     expect(await getAllPdfPasswords(db)).toEqual([]);
+    // And v4's merchant names.
+    expect(await db.getAll('merchantNames')).toEqual([]);
+    db.close();
+  });
+
+  it('names merchants, renames them, and drops names one group at a time', async () => {
+    const db = await openKardabraDb();
+    await putMerchantNames(db, ['TATA1MG', '1MGHEALTHCARESOLUTIO'], 'Tata 1mg');
+    await putMerchantNames(db, ['TATA1MG'], '1mg');
+    await deleteMerchantNames(db, ['1MGHEALTHCARESOLUTIO']);
+    expect(await db.getAll('merchantNames')).toEqual([
+      { key: 'TATA1MG', name: '1mg' },
+    ]);
     db.close();
   });
 

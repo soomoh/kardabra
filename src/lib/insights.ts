@@ -20,7 +20,11 @@ import type {
 import { addDaysISO, previousPeriod } from './dates';
 import { transactionKind, type TransactionKind } from './kind';
 import { classifyCharge } from './charges';
-import { cleanMerchant, isBrand, merchantKey } from './merchant';
+import {
+  nameMerchants,
+  type MerchantRename,
+  type NamedMerchant,
+} from './merchantGroups';
 import { walkCardPayments } from './spend';
 
 export interface InsightsInput {
@@ -28,20 +32,18 @@ export interface InsightsInput {
   statements: StatementRecord[];
   transactions: TransactionRecord[];
   cycles: CycleRecord[];
+  /** The user's merchant names; none when left out. */
+  merchantNames?: MerchantRename[];
 }
 
-/** One transaction with its derived labels. */
-export interface LabelledTxn {
+/** One transaction with its derived labels; its merchant (name, grouping
+ * key, bank group, rename) comes from lib/merchantGroups.ts. */
+export interface LabelledTxn extends NamedMerchant {
   id: string;
   cardId: string;
   period: string; // the statement's billing month
   dateISO: string;
   payee: string;
-  merchant: string; // cleanMerchant(payee)
-  /** lib/merchant.ts merchantKey: the grouping key, so "TATAPAYMENTS" and
-   * "Tata Payments Limited" meet. `merchant` is the spelling shown for the
-   * whole group (its most common one), so one merchant has one name. */
-  merchantKey: string;
   amount: number; // out negative, in positive
   kind: TransactionKind;
 }
@@ -58,7 +60,7 @@ export function labelTransactions(input: InsightsInput): LabelledTxn[] {
   const cycles = new Map(
     input.cycles.map((c) => [`${c.cardId}|${c.period}`, c]),
   );
-  const out: LabelledTxn[] = [];
+  const out: Omit<LabelledTxn, keyof NamedMerchant>[] = [];
   for (const card of input.cards) {
     const statements = input.statements
       .filter((s) => s.cardId === card.id)
@@ -78,89 +80,23 @@ export function labelTransactions(input: InsightsInput): LabelledTxn[] {
     statements.forEach((statement, s) => {
       const payments = new Set(walked[s].indices);
       (txnsByStatement.get(statement.id) ?? []).forEach((txn, t) => {
-        const merchant = cleanMerchant(txn.payee);
         out.push({
           id: txn.id,
           cardId: card.id,
           period: statement.period,
           dateISO: txn.dateISO,
           payee: txn.payee,
-          merchant,
-          merchantKey: merchantKey(merchant),
           amount: txn.amount,
           kind: transactionKind(txn.payee, txn.amount, payments.has(t)),
         });
       });
     });
   }
-  return withGroupNames(out);
-}
-
-/** A key this long or longer can stand for the keys it starts; a shorter
- * one ("TATA") is too likely a shared first word. */
-const MIN_STEM = 8;
-
-/**
- * Each merchant key mapped to its group's key: the shortest key in the data,
- * MIN_STEM characters or more, that it starts with. Banks print the name in
- * a fixed-width field, so variation lands at the end ("ORBGEN TECHNOLOGIES
- * PR", "TATA PAYMENTS LIMITEDBMUMBAI") while the start stays put. Known
- * brands are left out on both sides: the brand table already groups their
- * spellings, and a bare "RELIANCE" must not take Reliance Digital and
- * Reliance Trends together. Two keys of one name that share only a stem
- * nobody printed alone stay apart.
- */
-function groupKeys(txns: LabelledTxn[]): Map<string, string> {
-  const stems = new Set<string>();
-  for (const txn of txns) {
-    if (!isBrand(txn.merchant) && txn.merchantKey.length >= MIN_STEM)
-      stems.add(txn.merchantKey);
-  }
-  const groups = new Map<string, string>();
-  for (const key of stems) {
-    let group = key;
-    for (let len = MIN_STEM; len < key.length; len++) {
-      if (stems.has(key.slice(0, len))) {
-        group = key.slice(0, len);
-        break;
-      }
-    }
-    groups.set(key, group);
-  }
-  return groups;
-}
-
-/** Puts every transaction in its merchant's group (`groupKeys`) and gives it
- * the group's name: the most common spelling of the group's own key (the
- * shortest, so the one with the least noise on its end); on a tie, the one
- * with more spaces (words read better than "TATAPAYMENTS"). */
-function withGroupNames(labelled: LabelledTxn[]): LabelledTxn[] {
-  const groups = groupKeys(labelled);
-  const txns = labelled.map((txn) => ({
-    ...txn,
-    merchantKey: groups.get(txn.merchantKey) ?? txn.merchantKey,
-  }));
-  const counts = new Map<string, Map<string, number>>();
-  txns.forEach((txn, i) => {
-    // The group's key is always some line's own key, so it always has a name.
-    if (labelled[i].merchantKey !== txn.merchantKey) return;
-    const names = counts.get(txn.merchantKey) ?? new Map<string, number>();
-    names.set(txn.merchant, (names.get(txn.merchant) ?? 0) + 1);
-    counts.set(txn.merchantKey, names);
-  });
-  const spaces = (name: string) => name.split(' ').length;
-  const chosen = new Map<string, string>();
-  for (const [key, names] of counts) {
-    const [best] = [...names].sort(
-      (a, b) =>
-        b[1] - a[1] || spaces(b[0]) - spaces(a[0]) || a[0].localeCompare(b[0]),
-    );
-    chosen.set(key, best[0]);
-  }
-  return txns.map((txn) => ({
-    ...txn,
-    merchant: chosen.get(txn.merchantKey)!,
-  }));
+  const named = nameMerchants(
+    out.map((txn) => txn.payee),
+    input.merchantNames,
+  );
+  return out.map((txn, i) => ({ ...txn, ...named[i] }));
 }
 
 /** Rounds a sum of rupee amounts to paise, so float drift never shows. */
@@ -205,8 +141,22 @@ function inRange(period: string, range: PeriodRange): boolean {
 
 // ── Where it went ──────────────────────────────────────────────────────
 
+/** One of the bank's groups inside a merchant: what a rename is stored on,
+ * so a merge made by naming can be undone one group at a time. */
+export interface MerchantGroup {
+  key: string;
+  bankName: string;
+  renamed: boolean;
+  /** The keys its lines print (a rename may sit under any of them). */
+  members: string[];
+}
+
 export interface MerchantTotal {
   merchant: string;
+  key: string; // merchantKey
+  /** Every bank group with this merchant's key across the history, not
+   * only the range: a rename covers them all. Sorted by bank name. */
+  groups: MerchantGroup[];
   /** Purchases minus that merchant's refunds (positive = money out). */
   net: number;
   purchases: number; // number of purchase lines
@@ -227,7 +177,21 @@ export interface WhereItWent {
 export function whereItWent(
   txns: LabelledTxn[],
   limits = { merchants: 8, largest: 5 },
+  history: LabelledTxn[] = txns,
 ): WhereItWent {
+  const groups = new Map<string, Map<string, MerchantGroup>>();
+  for (const txn of history) {
+    const byGroup = groups.get(txn.merchantKey) ?? new Map();
+    const group: MerchantGroup = byGroup.get(txn.group) ?? {
+      key: txn.group,
+      bankName: txn.bankName,
+      renamed: txn.renamed,
+      members: [],
+    };
+    if (!group.members.includes(txn.bankKey)) group.members.push(txn.bankKey);
+    byGroup.set(txn.group, group);
+    groups.set(txn.merchantKey, byGroup);
+  }
   const byMerchant = new Map<string, MerchantTotal>();
   const purchases: LabelledTxn[] = [];
   let total = 0;
@@ -235,6 +199,10 @@ export function whereItWent(
     if (txn.kind !== 'purchase' && txn.kind !== 'refund') continue;
     const entry = byMerchant.get(txn.merchantKey) ?? {
       merchant: txn.merchant,
+      key: txn.merchantKey,
+      groups: [...groups.get(txn.merchantKey)!.values()].sort((a, b) =>
+        a.bankName.localeCompare(b.bankName),
+      ),
       net: 0,
       purchases: 0,
       lines: [],
@@ -654,6 +622,7 @@ export function buildInsights(
           statements: input.statements.filter((s) => s.cardId === cardId),
           transactions: input.transactions.filter((t) => t.cardId === cardId),
           cycles: input.cycles.filter((c) => c.cardId === cardId),
+          merchantNames: input.merchantNames,
         };
   const known = new Set(selected.cards.map((c) => c.id));
   const statements = selected.statements.filter((s) => known.has(s.cardId));
@@ -675,7 +644,7 @@ export function buildInsights(
   return {
     range,
     statementCount: statements.filter((s) => inRange(s.period, range)).length,
-    whereItWent: whereItWent(txns),
+    whereItWent: whereItWent(txns, undefined, all),
     subscriptions,
     committed: monthlyCommitted(subscriptions),
     costs: whatItCosts(txns),

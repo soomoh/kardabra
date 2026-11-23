@@ -55,6 +55,7 @@ const sorted = (data: Awaited<ReturnType<typeof getStoredData>>) => ({
   statements: [...data.statements].sort((a, b) => a.id.localeCompare(b.id)),
   transactions: [...data.transactions].sort((a, b) => a.id.localeCompare(b.id)),
   cycles: [...data.cycles].sort((a, b) => a.cardId.localeCompare(b.cardId)),
+  merchantNames: data.merchantNames,
 });
 
 describe('backup → restore', () => {
@@ -68,6 +69,7 @@ describe('backup → restore', () => {
       statements: [],
       transactions: [],
       cycles: [],
+      merchantNames: [],
     });
     const opened = await readBackupFile(fileOf(text), PASS);
     expect(opened.ok).toBe(true);
@@ -86,7 +88,14 @@ describe('backup → restore', () => {
     if (!opened.ok) return;
     const inside = JSON.parse(new TextDecoder().decode(opened.plaintext));
     expect(Object.keys(inside).sort()).toEqual(
-      ['createdAt', 'cards', 'cycles', 'statements', 'transactions'].sort(),
+      [
+        'createdAt',
+        'cards',
+        'cycles',
+        'statements',
+        'transactions',
+        'merchantNames',
+      ].sort(),
     );
     const raw = new TextDecoder().decode(opened.plaintext);
     expect(raw).not.toContain(PASS);
@@ -112,6 +121,7 @@ describe('backup → restore', () => {
       statements: [],
       transactions: [],
       cycles: [],
+      merchantNames: [],
     });
     await putPdfPassword(db, password('card-local'));
     await putPdfPassword(db, password('card-a'));

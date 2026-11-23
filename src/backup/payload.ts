@@ -10,6 +10,7 @@
 import type {
   CardRecord,
   CycleRecord,
+  MerchantNameRecord,
   StatementRecord,
   TransactionRecord,
 } from '../db/schema';
@@ -20,6 +21,7 @@ export interface BackupData {
   statements: StatementRecord[];
   transactions: TransactionRecord[];
   cycles: CycleRecord[];
+  merchantNames: MerchantNameRecord[];
 }
 
 export type ParsedBackup =
@@ -304,6 +306,13 @@ function parseCycle(value: unknown, n: number): CycleRecord {
   });
 }
 
+function parseMerchantName(value: unknown, n: number): MerchantNameRecord {
+  const r = new Reader(value, `Merchant name ${n}`);
+  // The key may be empty: a blank description groups under the empty key,
+  // and the app can rename that merchant like any other.
+  return { key: r.text('key', 'merchant'), name: r.id('name', 'name') };
+}
+
 function list<T>(
   value: unknown,
   what: string,
@@ -342,6 +351,10 @@ export function parseBackupPayload(json: unknown): ParsedBackup {
         parseTransaction,
       ),
       cycles: list(top.raw('cycles'), 'bills', parseCycle),
+      // Backups from before merchant names have none.
+      merchantNames: top.present('merchantNames')
+        ? list(top.raw('merchantNames'), 'merchant names', parseMerchantName)
+        : [],
     };
     unique(
       data.cards,
@@ -362,6 +375,11 @@ export function parseBackupPayload(json: unknown): ParsedBackup {
       data.cycles,
       (c) => `${c.cardId}\u0000${c.period}`,
       (n) => `Bill ${n} repeats another bill`,
+    );
+    unique(
+      data.merchantNames,
+      (m) => m.key,
+      (n) => `Merchant name ${n} repeats another`,
     );
     const cardIds = new Set(data.cards.map((c) => c.id));
     const statementCards = new Map(

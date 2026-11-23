@@ -20,7 +20,7 @@ import type {
 } from './schema';
 
 const DB_NAME = 'kardabra';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 /** Run `work` inside `tx`, then wait for the transaction to commit, and
  * return what `work` returned. If `work` fails, the transaction is aborted
@@ -144,6 +144,9 @@ export function openKardabraDb(
       if (oldVersion < 3) {
         db.createObjectStore('pdfPasswords', { keyPath: 'cardId' });
         db.createObjectStore('keys', { keyPath: 'name' });
+      }
+      if (oldVersion < 4) {
+        db.createObjectStore('merchantNames', { keyPath: 'key' });
       }
     },
     blocked() {
@@ -604,6 +607,28 @@ export async function clearPdfPasswords(
   });
 }
 
+/** Names merchants: every group key in `keys` gets `name` (renaming a row
+ * that merged several groups renames each, so each can be undone alone). */
+export async function putMerchantNames(
+  db: IDBPDatabase<KardabraSchema>,
+  keys: readonly string[],
+  name: string,
+): Promise<void> {
+  const tx = db.transaction('merchantNames', 'readwrite');
+  await inTransaction(tx, () =>
+    issueAll(keys, (key) => tx.store.put({ key, name })),
+  );
+}
+
+/** Drops the user's names for these group keys: the bank's name shows again. */
+export async function deleteMerchantNames(
+  db: IDBPDatabase<KardabraSchema>,
+  keys: readonly string[],
+): Promise<void> {
+  const tx = db.transaction('merchantNames', 'readwrite');
+  await inTransaction(tx, () => issueAll(keys, (key) => tx.store.delete(key)));
+}
+
 /** How much the user has stored, for the Your data page. */
 export async function countStoredData(db: IDBPDatabase<KardabraSchema>) {
   const tx = db.transaction(
@@ -638,23 +663,29 @@ export async function eraseAllData(
 
 /** The stores a backup carries, read in one transaction so the copy is
  * consistent even while another tab imports. */
-const BACKED_UP = ['cards', 'statements', 'transactions', 'cycles'] as const;
+const BACKED_UP = [
+  'cards',
+  'statements',
+  'transactions',
+  'cycles',
+  'merchantNames',
+] as const;
 
 export async function getStoredData(
   db: IDBPDatabase<KardabraSchema>,
 ): Promise<StoredData> {
   const tx = db.transaction(BACKED_UP, 'readonly');
-  const [cards, statements, transactions, cycles] = await inTransaction(
-    tx,
-    () =>
+  const [cards, statements, transactions, cycles, merchantNames] =
+    await inTransaction(tx, () =>
       Promise.all([
         tx.objectStore('cards').getAll(),
         tx.objectStore('statements').getAll(),
         tx.objectStore('transactions').getAll(),
         tx.objectStore('cycles').getAll(),
+        tx.objectStore('merchantNames').getAll(),
       ]),
-  );
-  return { cards, statements, transactions, cycles };
+    );
+  return { cards, statements, transactions, cycles, merchantNames };
 }
 
 /** Replace every card, statement, transaction and bill with `data`, in one
@@ -681,6 +712,9 @@ export async function replaceStoredData(
         (t) => () => tx.objectStore('transactions').put(t),
       ),
       ...data.cycles.map((c) => () => tx.objectStore('cycles').put(c)),
+      ...data.merchantNames.map(
+        (m) => () => tx.objectStore('merchantNames').put(m),
+      ),
     ];
     await issueAll(writes, (write) => write());
   });

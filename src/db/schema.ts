@@ -11,6 +11,7 @@
  * shape of object).
  */
 
+import type { MerchantRename } from '../lib/merchantGroups';
 import type { DBSchema } from 'idb';
 
 /** One physical credit card the user tracks. `dueDay` is deliberately
@@ -170,6 +171,10 @@ export interface KeyRecord {
   key: CryptoKey;
 }
 
+/** v4: the user's name for a merchant (lib/merchantGroups.ts), under the
+ * key of the bank's group it was given to. */
+export type MerchantNameRecord = MerchantRename;
+
 /** Everything a backup carries: the user's records, and nothing that
  * belongs to this device alone (settings, saved passwords, keys). */
 export interface StoredData {
@@ -177,6 +182,7 @@ export interface StoredData {
   statements: StatementRecord[];
   transactions: TransactionRecord[];
   cycles: CycleRecord[];
+  merchantNames: MerchantNameRecord[];
 }
 
 export interface KardabraSchema extends DBSchema {
@@ -216,5 +222,9 @@ export interface KardabraSchema extends DBSchema {
   keys: {
     key: string; // KeyRecord.name
     value: KeyRecord;
+  };
+  merchantNames: {
+    key: string; // MerchantNameRecord.key
+    value: MerchantNameRecord;
   };
 }

@@ -171,6 +171,25 @@ for (const colorScheme of ['light', 'dark'] as const) {
           .first()
           .click();
         await shot(page, 'insights');
+
+        // A merchant renamed into another, open, with the editor showing.
+        const row = (name: RegExp) =>
+          page.locator('.cost-row').filter({ hasText: name });
+        await row(/^COOL COFFEE/)
+          .locator('summary')
+          .click();
+        await row(/^COOL COFFEE/)
+          .getByRole('button', { name: 'Rename' })
+          .click();
+        await page
+          .getByRole('textbox', { name: /^New name for/ })
+          .fill('Swiggy');
+        await page.keyboard.press('Enter');
+        await expect(row(/^Swiggy/)).toContainText('Renamed from');
+        await row(/^Swiggy/)
+          .getByRole('button', { name: 'Rename' })
+          .click();
+        await shot(page, 'insights-renamed');
       });
     });
   }

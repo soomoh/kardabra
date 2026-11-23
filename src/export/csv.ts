@@ -13,7 +13,7 @@
 
 import { nextDayISO } from '../lib/dates';
 import { transactionKind } from '../lib/kind';
-import { cleanMerchant } from '../lib/merchant';
+import { nameMerchants, type MerchantRename } from '../lib/merchantGroups';
 import { walkCardPayments } from '../lib/spend';
 import type {
   CardRecord,
@@ -51,6 +51,8 @@ export interface ExportInput {
    * within each statement). */
   transactions: TransactionRecord[];
   cycles: CycleRecord[];
+  /** The user's merchant names; none when left out. */
+  merchantNames?: MerchantRename[];
 }
 
 /** Text a spreadsheet would run as a formula: `=`, `+`, `-`, `@`, or a tab
@@ -154,6 +156,16 @@ export function buildExportCsv(
     list.push(txn);
     txnsByStatement.set(txn.statementId, list);
   }
+  // Named over every transaction, not just the exported ones, so a
+  // merchant's name doesn't change with the date range chosen; the same
+  // names Insights shows.
+  const named = nameMerchants(
+    input.transactions.map((txn) => txn.payee),
+    input.merchantNames,
+  );
+  const merchantOf = new Map(
+    input.transactions.map((txn, i) => [txn, named[i].merchant]),
+  );
   const cycleKey = (cardId: string, period: string) => `${cardId}|${period}`;
   const cycles = new Map(
     input.cycles.map((c) => [cycleKey(c.cardId, c.period), c]),
@@ -210,7 +222,7 @@ export function buildExportCsv(
             date: txn.dateISO,
             posted: '', // not stored yet: no statement read so far prints one
             description: safeText(txn.payee),
-            merchant: safeText(cleanMerchant(txn.payee)),
+            merchant: safeText(merchantOf.get(txn)!),
             amount: money(txn.amount),
             currency: statement.currency ?? card.currency ?? 'INR',
             kind: transactionKind(txn.payee, txn.amount, payments.has(t)),

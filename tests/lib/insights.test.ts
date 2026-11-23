@@ -20,6 +20,9 @@ import {
   type LabelledTxn,
 } from '../../src/lib/insights';
 
+// A bank spelling of Tata 1mg (named so a scanner doesn't read `key: '…'` as a secret).
+const ONE_MG = '1MGHEALTHCARESOLUTIO';
+
 /** A tiny store: `months` maps period → that statement's lines
  * [day, payee, amount]. Every statement gets a cycle row. */
 function store(
@@ -170,6 +173,15 @@ describe('whereItWent', () => {
     ).toEqual([
       {
         merchant: 'COOL COFFEE',
+        key: 'COOLCOFFEE',
+        groups: [
+          {
+            key: 'COOLCOFFEE',
+            bankName: 'COOL COFFEE',
+            renamed: false,
+            members: ['COOLCOFFEE'],
+          },
+        ],
         net: 900,
         purchases: 2,
         lines: [
@@ -179,6 +191,15 @@ describe('whereItWent', () => {
       },
       {
         merchant: 'Amazon',
+        key: 'AMAZON',
+        groups: [
+          {
+            key: 'AMAZON',
+            bankName: 'Amazon',
+            renamed: false,
+            members: ['AMAZON'],
+          },
+        ],
         net: 500,
         purchases: 1,
         lines: [
@@ -271,6 +292,61 @@ describe('whereItWent', () => {
     // Merged spellings are one merchant to the other insights too.
     expect(whereItWent(txns).merchants).toHaveLength(1);
     expect(possibleDuplicates(txns)).toHaveLength(1);
+  });
+
+  test('a merchant lists every bank group in it, even outside the range', () => {
+    const input = {
+      ...store({
+        a: {
+          months: {
+            '2026-01': [[3, '1MGHEALTHCARESOLUTIO', -900]],
+            '2026-04': [[3, 'Tata 1mg', -100]],
+          },
+        },
+      }),
+      merchantNames: [{ key: ONE_MG, name: 'Tata 1mg' }],
+    } as Parameters<typeof buildInsights>[0];
+    const [merchant] = buildInsights(input, '3')!.whereItWent.merchants;
+    expect(merchant).toMatchObject({
+      merchant: 'Tata 1mg',
+      net: 100, // the January line is outside the last 3 months
+      groups: [
+        {
+          key: ONE_MG,
+          bankName: '1MGHEALTHCARESOLUTIO',
+          renamed: true,
+        },
+        { key: 'TATA1MG', bankName: 'Tata 1mg', renamed: false },
+      ],
+    });
+  });
+
+  test('a group lists the keys its lines print, where an old rename may sit', () => {
+    const input = {
+      ...store({
+        a: {
+          months: {
+            '2026-03': [
+              [1, 'PAYMENT RECEIVED THANK YOU', 9000],
+              [2, 'ORBGEN TECHNOLOGIES PR', -200],
+              [3, 'ORBGEN TECHNOLOGIES', -100],
+            ],
+          },
+        },
+      }),
+      // Given before the shorter stem was printed.
+      merchantNames: [{ key: 'ORBGENTECHNOLOGIESPR', name: 'Orbgen' }],
+    } as Parameters<typeof buildInsights>[0];
+    const [merchant] = buildInsights(input, '3')!.whereItWent.merchants;
+    expect(merchant.merchant).toBe('Orbgen');
+    expect(merchant.groups).toEqual([
+      {
+        key: 'ORBGENTECHNOLOGIES',
+        bankName: 'ORBGEN TECHNOLOGIES',
+        renamed: true,
+        members: ['ORBGENTECHNOLOGIESPR', 'ORBGENTECHNOLOGIES'],
+      },
+    ]);
   });
 
   test('a merchant with only refunds is not a top merchant', () => {

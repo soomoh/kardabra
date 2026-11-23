@@ -111,3 +111,65 @@ test('the card page links to its own insights, and Back returns', async ({
   await page.getByRole('link', { name: /Back to/ }).click();
   await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible();
 });
+
+test('rename a merchant once: it merges, sticks, and can be undone', async ({
+  page,
+}) => {
+  await importFourMonths(page);
+  await page.getByRole('link', { name: 'Insights', exact: true }).click();
+  const where = page.getByRole('group', { name: 'Top merchants' });
+  const merchant = (name: RegExp) =>
+    where.locator('.cost-row').filter({ hasText: name });
+
+  // Escape leaves the name as it was, and focus back on Rename.
+  await merchant(/^COOL COFFEE/)
+    .locator('summary')
+    .click();
+  await merchant(/^COOL COFFEE/)
+    .getByRole('button', { name: 'Rename' })
+    .click();
+  const field = page.getByRole('textbox', { name: 'New name for COOL COFFEE' });
+  await expect(field).toHaveValue('COOL COFFEE');
+  await field.press('Escape');
+  await expect(
+    merchant(/^COOL COFFEE/).getByRole('button', { name: 'Rename' }),
+  ).toBeFocused();
+
+  // Naming it as another merchant makes the two one.
+  await merchant(/^COOL COFFEE/)
+    .getByRole('button', { name: 'Rename' })
+    .click();
+  await field.fill('Swiggy');
+  await field.press('Enter');
+  const swiggy = merchant(/^Swiggy/);
+  await expect(swiggy.locator('summary')).toContainText(
+    /^Swiggy \(6 purchases\).*₹6,920\.00/,
+  );
+  await expect(where).not.toContainText('COOL COFFEE (');
+  await expect(swiggy.locator('summary')).toBeFocused();
+  const said = page.locator('.insights-page p[role="status"]');
+  await expect(said).toHaveText('Renamed to Swiggy.');
+  await expect(swiggy).toContainText('Renamed from COOL COFFEE');
+
+  // It sticks.
+  await page.reload();
+  await expect(merchant(/^Swiggy/).locator('summary')).toContainText(
+    '(6 purchases)',
+  );
+
+  // And comes apart again.
+  await merchant(/^Swiggy/)
+    .locator('summary')
+    .click();
+  await merchant(/^Swiggy/)
+    .getByRole('button', { name: 'Use the bank’s name, COOL COFFEE' })
+    .click();
+  await expect(merchant(/^COOL COFFEE/).locator('summary')).toContainText(
+    '(2 purchases)',
+  );
+  await expect(merchant(/^COOL COFFEE/).locator('summary')).toBeFocused();
+  await expect(said).toHaveText('COOL COFFEE has the bank’s name again.');
+  await expect(merchant(/^Swiggy/).locator('summary')).toContainText(
+    '(4 purchases)',
+  );
+});

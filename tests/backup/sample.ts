@@ -94,5 +94,6 @@ export function sampleData(): StoredData {
         spend: 999,
       },
     ],
+    merchantNames: [{ key: 'MERCHANT01', name: 'Corner shop' }],
   };
 }

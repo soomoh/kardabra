@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useDb, useReportError } from '../db/DbProvider';
 import { useDataVersion } from '../context/DataVersionContext';
-import { getStoredData } from '../db/db';
+import { deleteMerchantNames, getStoredData, putMerchantNames } from '../db/db';
 import type { StoredData } from '../db/schema';
 import {
   buildInsights,
@@ -10,6 +17,8 @@ import {
   type CostKind,
   type Insights,
   type LabelledTxn,
+  type MerchantGroup,
+  type MerchantTotal,
   type RangeChoice,
 } from '../lib/insights';
 import { formatINR } from '../lib/money';
@@ -17,6 +26,7 @@ import { formatDateLabel, formatPeriodLabel, nextPeriod } from '../lib/dates';
 import { plural } from '../lib/plural';
 import { routeHash, type View } from '../lib/route';
 import { useDocumentTitle } from './useDocumentTitle';
+import { useReturnFocus } from './useReturnFocus';
 
 interface InsightsPageProps {
   /** Undefined: every card together. */
@@ -36,16 +46,61 @@ const RANGE_LABELS: Record<RangeChoice, string> = {
 function InsightsPage({ cardId, navigate }: InsightsPageProps) {
   const db = useDb();
   const reportError = useReportError();
-  const { version } = useDataVersion();
+  const { version, bump } = useDataVersion();
   const [data, setData] = useState<StoredData | null>(null);
   const [range, setRange] = useState<RangeChoice>('12');
   useDocumentTitle('Insights');
+  // After a rename the row re-renders under a new name, or splits: once the
+  // new data is on screen, open and focus the row that holds a changed
+  // group (or a heading when none made the top list), and say what
+  // happened, since the change may be out of sight.
+  const pendingFocus = useRef<{
+    groups: string[];
+    message: string;
+    stale: StoredData;
+  } | null>(null);
+  const status = useRef<HTMLParagraphElement>(null);
+  const onRenamed = (groups: string[], message: string) => {
+    if (data !== null) pendingFocus.current = { groups, message, stale: data };
+    bump();
+  };
+  useEffect(() => {
+    const pending = pendingFocus.current;
+    if (pending === null || data === pending.stale) return;
+    pendingFocus.current = null;
+    const row = [
+      ...document.querySelectorAll<HTMLDetailsElement>('details[data-groups]'),
+    ].find((el) =>
+      el.dataset.groups!.split(' ').some((g) => pending.groups.includes(g)),
+    );
+    if (row) {
+      row.open = true;
+      row.querySelector('summary')?.focus();
+    } else {
+      (
+        document.getElementById('merchants-heading') ??
+        document.getElementById('spend-heading')
+      )?.focus();
+    }
+    if (status.current !== null) {
+      status.current.textContent = row
+        ? pending.message
+        : `${pending.message} It isn’t among the top merchants for these months.`;
+    }
+  }, [data]);
 
   useEffect(() => {
     let cancelled = false;
-    getStoredData(db).then((loaded) => {
-      if (!cancelled) setData(loaded);
-    }, reportError);
+    getStoredData(db).then(
+      (loaded) => {
+        if (!cancelled) setData(loaded);
+      },
+      (error) => {
+        // Nothing will arrive to focus; don't let a later load do it.
+        pendingFocus.current = null;
+        reportError(error);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -157,6 +212,7 @@ function InsightsPage({ cardId, navigate }: InsightsPageProps) {
       <p className="muted insights-range" aria-live="polite">
         {insights === null ? '' : rangeLine(insights)}
       </p>
+      <p ref={status} role="status" className="visually-hidden" />
       {insights === null ? (
         <p className="muted">No statements for this card yet.</p>
       ) : (
@@ -164,6 +220,7 @@ function InsightsPage({ cardId, navigate }: InsightsPageProps) {
           insights={insights}
           cardName={showCard ? cardName : null}
           singleCard={card !== undefined || cards.length === 1}
+          onRenamed={onRenamed}
         />
       )}
     </div>
@@ -183,11 +240,13 @@ function InsightSections({
   insights,
   cardName,
   singleCard,
+  onRenamed,
 }: {
   insights: Insights;
   /** Names a card in each row, when the page shows several. */
   cardName: ((id: string) => string) | null;
   singleCard: boolean;
+  onRenamed: (groups: string[], message: string) => void;
 }) {
   const {
     whereItWent: where,
@@ -210,7 +269,9 @@ function InsightSections({
   return (
     <>
       <section aria-labelledby="spend-heading">
-        <h2 id="spend-heading">Spend breakdown</h2>
+        <h2 id="spend-heading" tabIndex={-1}>
+          Spend breakdown
+        </h2>
         {where.largest.length === 0 ? (
           <p className="muted">No purchases in these months.</p>
         ) : (
@@ -223,34 +284,22 @@ function InsightSections({
             </p>
             {where.merchants.length > 0 && (
               <>
-                <h3 id="merchants-heading">Top merchants</h3>
+                <h3 id="merchants-heading" tabIndex={-1}>
+                  Top merchants
+                </h3>
                 <div
                   className="cost-list"
                   role="group"
                   aria-labelledby="merchants-heading"
                 >
                   {where.merchants.map((m) => (
-                    <LinesRow
-                      key={m.merchant}
-                      label={m.merchant}
-                      count={merchantCount(
-                        m.purchases,
-                        m.lines.length - m.purchases,
-                      )}
-                      figure={
-                        <span className="amount">{formatINR(m.net)}</span>
-                      }
-                      lines={m.lines}
+                    <MerchantRow
+                      key={m.key}
+                      merchant={m}
+                      share={m.net / where.merchants[0].net}
                       cardName={cardName}
-                    >
-                      <span className="share-bar" aria-hidden="true">
-                        <span
-                          style={{
-                            width: `${Math.max(1, (m.net / where.merchants[0].net) * 100)}%`,
-                          }}
-                        />
-                      </span>
-                    </LinesRow>
+                      onRenamed={onRenamed}
+                    />
                   ))}
                 </div>
               </>
@@ -520,7 +569,9 @@ function LinesRow({
   figure,
   lines,
   cardName,
-  children,
+  bar,
+  after,
+  groups,
 }: {
   label: string;
   count: string;
@@ -528,16 +579,20 @@ function LinesRow({
   lines: LabelledTxn[];
   cardName: ((id: string) => string) | null;
   /** A full-width line under the row (a share bar). */
-  children?: ReactNode;
+  bar?: ReactNode;
+  /** Shown under the lines once opened (a merchant's rename controls). */
+  after?: ReactNode;
+  /** The bank groups in the row, for finding it again after a rename. */
+  groups?: string;
 }) {
   return (
-    <details className="cost-row">
+    <details className="cost-row" data-groups={groups}>
       <summary>
         <span>
           {label} <span className="muted cost-count">({count})</span>
         </span>
         {figure}
-        {children}
+        {bar}
       </summary>
       <div className="table-scroll">
         <table className="txn-table" aria-label={`${label}: lines`}>
@@ -565,7 +620,142 @@ function LinesRow({
           </tbody>
         </table>
       </div>
+      {after}
     </details>
+  );
+}
+
+/** Longest name the rename field takes: room for any real merchant name,
+ * far inside what a backup restores (payload.ts MAX_TEXT). */
+const MAX_MERCHANT_NAME = 100;
+
+/** A top merchant: opens to its lines, and lets the user name it. A name
+ * is stored on every bank group in the row; a group renamed into another
+ * merchant is listed with its own undo, so a wrong merge comes apart. */
+function MerchantRow({
+  merchant: m,
+  share,
+  cardName,
+  onRenamed,
+}: {
+  merchant: MerchantTotal;
+  /** Of the top merchant's amount, for the bar. */
+  share: number;
+  cardName: ((id: string) => string) | null;
+  /** After a write: these groups changed (to find their row again), and
+   * what to tell the user. */
+  onRenamed: (groups: string[], message: string) => void;
+}) {
+  const db = useDb();
+  const reportError = useReportError();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const renameButton = useReturnFocus<HTMLButtonElement>(draft !== null);
+  const hintId = useId();
+  const renamed = m.groups.filter((g) => g.renamed);
+
+  async function save() {
+    if (draft === null || saving) return;
+    const name = draft.trim();
+    if (name === '') return;
+    if (name !== m.merchant) {
+      const keys = m.groups.map((g) => g.key);
+      setSaving(true);
+      try {
+        await putMerchantNames(db, keys, name);
+      } finally {
+        setSaving(false);
+      }
+      onRenamed(keys, `Renamed to ${name}.`);
+    }
+    setDraft(null);
+  }
+
+  /** Drops the rename wherever it is stored for this group: under the
+   * group's key, or under a member's key from before a shorter stem came. */
+  async function restoreBankName(group: MerchantGroup) {
+    await deleteMerchantNames(db, [group.key, ...group.members]);
+    onRenamed([group.key], `${group.bankName} has the bank’s name again.`);
+  }
+
+  return (
+    <LinesRow
+      label={m.merchant}
+      count={merchantCount(m.purchases, m.lines.length - m.purchases)}
+      figure={<span className="amount">{formatINR(m.net)}</span>}
+      lines={m.lines}
+      cardName={cardName}
+      groups={m.groups.map((g) => g.key).join(' ')}
+      bar={
+        <span className="share-bar" aria-hidden="true">
+          <span style={{ width: `${Math.max(1, share * 100)}%` }} />
+        </span>
+      }
+      after={
+        <div className="merchant-name">
+          {renamed.length > 0 && (
+            <ul className="merchant-renames">
+              {renamed.map((g) => (
+                <li key={g.key}>
+                  <span>
+                    Renamed from <span className="bank-name">{g.bankName}</span>
+                  </span>
+                  <button
+                    className="link-button"
+                    aria-label={`Use the bank’s name, ${g.bankName}`}
+                    onClick={() => void restoreBankName(g).catch(reportError)}
+                  >
+                    Use the bank’s name
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {draft === null ? (
+            <button
+              ref={renameButton}
+              className="link-button"
+              aria-label={`Rename ${m.merchant}`}
+              onClick={() => setDraft(m.merchant)}
+            >
+              Rename
+            </button>
+          ) : (
+            <>
+              <div className="rename-row">
+                <input
+                  type="text"
+                  value={draft}
+                  maxLength={MAX_MERCHANT_NAME}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    // An input method's Enter or Escape is for its candidate.
+                    if (e.nativeEvent.isComposing) return;
+                    if (e.key === 'Enter') e.preventDefault(); // see useReturnFocus
+                    if (e.key === 'Enter') void save().catch(reportError);
+                    if (e.key === 'Escape') setDraft(null);
+                  }}
+                  aria-label={`New name for ${m.merchant}`}
+                  aria-describedby={hintId}
+                  autoFocus
+                />
+                <button
+                  className="primary"
+                  onClick={() => void save().catch(reportError)}
+                  disabled={draft.trim() === '' || saving}
+                >
+                  Save
+                </button>
+                <button onClick={() => setDraft(null)}>Cancel</button>
+              </div>
+              <p id={hintId} className="muted merchant-name-hint">
+                Give two merchants the same name to count them as one.
+              </p>
+            </>
+          )}
+        </div>
+      }
+    />
   );
 }
 
