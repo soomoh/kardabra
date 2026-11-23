@@ -2,6 +2,10 @@
 #
 #   hledger import --rules kardabra.rules kardabra-transactions.csv
 #
+# Save each new export over the old one, under the same name: `hledger
+# import` remembers the newest date it imported per file name, so under a
+# new name ("kardabra-transactions (1).csv") every row is imported again.
+#
 # A starting point: copy it, then change the account names to your own.
 # Kardabra writes one row per card transaction, signed from the card's
 # side (a purchase is negative, a payment or refund positive), so the

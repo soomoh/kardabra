@@ -7,6 +7,7 @@
 !/.prettierignore
 !/.prettierrc
 !/.repo-visibility
+!/CONTRIBUTING.md
 !/docs/
 !/LICENSE
 !/README.md
