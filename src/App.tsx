@@ -6,6 +6,8 @@ import ImportPage from './components/ImportPage';
 import CardDetail from './components/CardDetail';
 import YourDataPage from './components/YourDataPage';
 import InsightsPage from './components/InsightsPage';
+import DemoBar, { DemoImportOff } from './components/DemoBar';
+import { IS_DEMO } from './lib/sites';
 import { parseRoute, routeHash, type View } from './lib/route';
 import { followDataReplacedElsewhere } from './lib/erase';
 import {
@@ -166,10 +168,16 @@ function App() {
         <main ref={mainRef} tabIndex={-1} className="app-main">
           <DbProvider>
             <ThemeSettingSync choice={theme} onLoad={loadStoredTheme} />
+            {IS_DEMO && <DemoBar navigate={navigate} />}
             {view.name === 'dashboard' && (
               <Dashboard navigate={navigate} notice={view.notice} />
             )}
-            {view.name === 'import' && <ImportPage navigate={navigate} />}
+            {view.name === 'import' &&
+              (IS_DEMO ? (
+                <DemoImportOff />
+              ) : (
+                <ImportPage navigate={navigate} />
+              ))}
             {view.name === 'data' && <YourDataPage />}
             {view.name === 'insights' && (
               <InsightsPage cardId={view.cardId} navigate={navigate} />

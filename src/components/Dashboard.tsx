@@ -25,6 +25,7 @@ import TrendsChart from './TrendsChart';
 import { useDocumentTitle } from './useDocumentTitle';
 import { XIcon } from './icons';
 import { routeHash, type View } from '../lib/route';
+import { DEMO_URL, IS_DEMO } from '../lib/sites';
 
 interface DashboardProps {
   navigate: (view: View, options?: { replace?: boolean }) => void;
@@ -149,6 +150,8 @@ function Dashboard({ navigate, notice }: DashboardProps) {
   }
 
   if (entries.length === 0) {
+    // The demo fills itself with the sample card (DemoBar).
+    if (IS_DEMO) return <p role="status">Loading the demo…</p>;
     return (
       <div className="empty-state">
         <h1>No cards yet</h1>
@@ -162,6 +165,9 @@ function Dashboard({ navigate, notice }: DashboardProps) {
         >
           Import statements
         </button>
+        <p className="empty-aside">
+          Not ready to? <a href={DEMO_URL}>See a demo with made-up data</a>.
+        </p>
       </div>
     );
   }

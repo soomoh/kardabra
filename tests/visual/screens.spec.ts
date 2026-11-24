@@ -153,6 +153,15 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await shot(page, 'data');
       });
 
+      test('demo', async ({ page }) => {
+        // The demo site (playwright.config.ts): it loads the sample itself.
+        await page.goto('http://localhost:4175/');
+        await expect(page.locator('.card-grid')).toBeVisible();
+        await shot(page, 'demo-dashboard');
+        await page.getByRole('link', { name: 'Import', exact: true }).click();
+        await shot(page, 'demo-import');
+      });
+
       test('insights', async ({ page }) => {
         await page.clock.setFixedTime(new Date('2025-10-20T10:00:00'));
         await page.goto('/#/import');

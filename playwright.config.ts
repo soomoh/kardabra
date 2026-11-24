@@ -14,6 +14,13 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // The demo site: the same app built with VITE_DEMO=1 (lib/sites.ts).
+      command: 'npm run dev -- --port 4175 --strictPort',
+      env: { VITE_DEMO: '1' },
+      url: 'http://localhost:4175',
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // The production build, for what only exists there (the CSP). Never
       // reused: a stale build would test old code.
       command: 'npm run build && npx vite preview --port 4174 --strictPort',

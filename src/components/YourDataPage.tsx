@@ -9,6 +9,7 @@ import { plural } from '../lib/plural';
 import BackupSection from './BackupSection';
 import ExportSection from './ExportSection';
 import RestoreSection from './RestoreSection';
+import { IS_DEMO } from '../lib/sites';
 import { useDocumentTitle } from './useDocumentTitle';
 import { useReturnFocus } from './useReturnFocus';
 
@@ -100,8 +101,16 @@ function YourDataPage() {
         </p>
       </section>
 
-      <BackupSection hasData={loaded && loaded.cards + loaded.statements > 0} />
-      <RestoreSection current={loaded} />
+      {/* The demo holds nothing worth keeping, and a restore would strand
+          real data on the demo site. */}
+      {!IS_DEMO && (
+        <>
+          <BackupSection
+            hasData={loaded && loaded.cards + loaded.statements > 0}
+          />
+          <RestoreSection current={loaded} />
+        </>
+      )}
       <ExportSection hasData={loaded && loaded.transactions > 0} />
 
       {loaded !== null && (

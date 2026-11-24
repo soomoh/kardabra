@@ -586,6 +586,34 @@ input[type='number']::-webkit-inner-spin-button {
   margin: 0 auto var(--space-lg);
   color: var(--ink-muted);
 }
+.empty-state .empty-aside {
+  margin: var(--space-md) auto 0;
+  font-size: var(--text-sm);
+}
+
+/* The demo site's standing banner (DemoBar): what this is, and the way out
+   to the real app. */
+.demo-bar {
+  flex-wrap: wrap;
+}
+.demo-bar p {
+  flex: 1 1 16rem;
+}
+.demo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.empty-state .demo-actions {
+  justify-content: center;
+}
+.demo-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding-inline: var(--space-2xs);
+}
 
 .card-grid {
   display: grid;
@@ -1445,7 +1473,9 @@ h1[tabindex='-1']:focus {
 }
 /* In-text links: ink, underlined, green on hover (the brand's action colour). */
 .insights-page p a,
-.insights-link a {
+.insights-link a,
+.empty-state a,
+.demo-actions a {
   color: var(--ink);
   font-weight: 600;
   text-decoration: underline;
@@ -1453,7 +1483,9 @@ h1[tabindex='-1']:focus {
   transition: color var(--dur) var(--ease);
 }
 .insights-page p a:hover,
-.insights-link a:hover {
+.insights-link a:hover,
+.empty-state a:hover,
+.demo-actions a:hover {
   color: var(--primary);
 }
 .insights-page section > p {
