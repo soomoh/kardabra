@@ -70,7 +70,7 @@ test('the built app runs under its CSP with no violations, and fetch is refused'
 
   // No network, enforced by the browser rather than by convention.
   const fetched = await page.evaluate(() =>
-    fetch('/favicon.svg').then(
+    fetch('/icons/favicon-32.png').then(
       () => 'allowed',
       () => 'refused',
     ),

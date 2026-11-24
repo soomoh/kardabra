@@ -16,6 +16,22 @@ export default tseslint.config(
         console: 'readonly',
         process: 'readonly',
         Buffer: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
+  {
+    // The service worker template; the build fills the placeholder.
+    files: ['src/pwa/sw.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        Request: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        Promise: 'readonly',
+        __KARDABRA_FILES__: 'readonly',
       },
     },
   },

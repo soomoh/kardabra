@@ -8,6 +8,7 @@ import { getAllCards, getAllStatements, getAllTransactions } from '../db/db';
 import type { CardRecord } from '../db/schema';
 import { planImport, type ParseResult, type FileOutcome } from '../import/plan';
 import { commitImport, type CommitUserInput } from '../import/commit';
+import { keepStorage } from '../lib/persist';
 import { importedNotice, withSuggestedNames } from '../import/review';
 import {
   readStatementFiles,
@@ -348,6 +349,7 @@ function ImportPage({ navigate }: ImportPageProps) {
         withSuggestedNames(outcomes, inputs),
       );
       bump();
+      keepStorage();
       navigate({ name: 'dashboard', notice: importedNotice(result) });
     } catch (error) {
       // A commit is several writes, so a failure can leave some of them done

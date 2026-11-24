@@ -12,6 +12,7 @@ import type { BackupData } from '../backup/payload';
 import { formatDateLabel } from '../lib/dates';
 import { announceDataReplaced } from '../lib/erase';
 import { plural } from '../lib/plural';
+import { keepStorage } from '../lib/persist';
 
 type Step =
   | { kind: 'idle' }
@@ -157,6 +158,7 @@ function RestoreSection({
     }
     announceDataReplaced();
     bump();
+    keepStorage();
     setTyped('');
     setBlank(false);
     setStep({ kind: 'done', data });

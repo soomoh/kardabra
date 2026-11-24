@@ -25,6 +25,9 @@ account to create.
 - **Export.** Take every transaction out as one CSV file, with clean
   merchant names, for a spreadsheet or your budgeting app. See
   [the export format](docs/export.md).
+- **Install it, use it offline.** Add Kardabra to your home screen or
+  desktop from the browser. After your first visit it opens and reads
+  statements with no internet connection.
 
 ## Statements it reads
 
